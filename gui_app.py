@@ -69,6 +69,15 @@ BTN_SECONDARY = "#1e293b"
 BTN_SECONDARY_HOVER = "#334155"
 
 
+def get_quota_color(used_pct):
+    """Consistent color scale across Google and Claude progress meters."""
+    if used_pct is not None and used_pct >= 90:
+        return COLOR_DANGER
+    elif used_pct is not None and used_pct >= 80:
+        return COLOR_WARN
+    return COLOR_READY
+
+
 def apply_dark_titlebar(root):
     """Enables Windows 11 / 10 native immersive dark mode on the window frame."""
     try:
@@ -241,7 +250,7 @@ class AccountSwitchboardApp:
 
         subtitle = tk.Label(
             title_box,
-            text="Direct Google Cloud Code Limits • 5-Hour & Weekly Quotas • Auto-Sync",
+            text="Real-Time Antigravity & Claude Quotas • 5-Hour & Weekly Windows • 1-Click Switcher",
             font=("Segoe UI", 9),
             fg=TEXT_MUTED,
             bg=BG_MAIN
@@ -452,14 +461,14 @@ class AccountSwitchboardApp:
                 card_border = BORDER_STAGED
                 badge_bg = "#0284c7"
                 badge_fg = "#f0f9ff"
-                status_txt = "📁 STAGED (Click Switch)"
-                status_color = "#38bdf8"
+                status_txt = "● STAGED"
+                status_color = COLOR_READY
             else:
                 card_bg = BG_CARD
                 card_border = BORDER_DEFAULT
                 badge_bg = "#2563eb"
                 badge_fg = "#eff6ff"
-                status_txt = "● READY TO SWITCH"
+                status_txt = "● READY"
                 status_color = COLOR_READY
 
             card = tk.Frame(
@@ -677,18 +686,18 @@ class AccountSwitchboardApp:
             init_wk_used = claude_info.get("weekly_used_pct", 92)
             init_wk_rem = claude_info.get("weekly_rem_pct", 8)
 
-            init_5h_col = COLOR_WARN if init_5h_used >= 80 else "#38bdf8"
-            init_5h_txt = COLOR_WARN if init_5h_used >= 80 else "#38bdf8"
-            init_wk_col = COLOR_WARN if init_wk_used >= 80 else "#38bdf8"
-            init_wk_txt = COLOR_WARN if init_wk_used >= 80 else "#38bdf8"
+            init_5h_col = get_quota_color(init_5h_used)
+            init_5h_txt = init_5h_col
+            init_wk_col = get_quota_color(init_wk_used)
+            init_wk_txt = init_wk_col
 
             s_reset_init = claude_info.get("session_reset_desc", "Resets in 4 hr 36 min")
             w_reset_init = claude_info.get("weekly_reset_desc", "Resets Mon 7:00 PM")
             model_init = claude_info.get("active_model", "Opus 5.5 High")
 
             if c_running:
-                c_status_txt = "● APP ACTIVE"
-                c_status_color = "#34d399"
+                c_status_txt = "● ACTIVE IN APP"
+                c_status_color = COLOR_ACTIVE
             else:
                 c_status_txt = "● READY"
                 c_status_color = COLOR_CLAUDE
@@ -1005,10 +1014,10 @@ class AccountSwitchboardApp:
                 w_used = cs.get("weekly_used_pct", 92) if cs else 92
                 w_rem = cs.get("weekly_rem_pct", 8) if cs else 8
 
-                col_5h = COLOR_WARN if s_used >= 80 else "#38bdf8"
-                txt_col_5h = COLOR_WARN if s_used >= 80 else "#38bdf8"
-                col_wk = COLOR_WARN if w_used >= 80 else "#38bdf8"
-                txt_col_wk = COLOR_WARN if w_used >= 80 else "#38bdf8"
+                col_5h = get_quota_color(s_used)
+                txt_col_5h = col_5h
+                col_wk = get_quota_color(w_used)
+                txt_col_wk = col_wk
 
                 refs["lbl_5h_val"].config(text=f"{s_used}% used  ({s_rem}% left)", fg=txt_col_5h)
                 refs["lbl_wk_val"].config(text=f"{w_used}% used  ({w_rem}% left)", fg=txt_col_wk)
@@ -1040,13 +1049,13 @@ class AccountSwitchboardApp:
                 if refs.get("claude_lbl"):
                     refs["claude_lbl"].config(
                         text=f"Model: {model_str}  🔴" if w_used >= 80 else f"Model: {model_str}",
-                        fg="#f87171" if w_used >= 80 else TEXT_MUTED
+                        fg=COLOR_DANGER if w_used >= 80 else TEXT_MUTED
                     )
 
                 is_running = cs.get("app_running", False) if cs else False
                 pids = cs.get("app_pids", []) if cs else []
                 if is_running:
-                    refs["status_pill"].config(text="● APP ACTIVE", fg="#34d399")
+                    refs["status_pill"].config(text="● ACTIVE IN APP", fg=COLOR_ACTIVE)
                 else:
                     refs["status_pill"].config(text="● READY", fg=COLOR_CLAUDE)
                 continue
@@ -1084,8 +1093,8 @@ class AccountSwitchboardApp:
                     fg="#93c5fd" if is_paid else TEXT_MUTED
                 )
 
-            # 5h Limit Text & Bar (turns red if used >= 80% / remaining <= 20%)
-            col_5h = COLOR_WARN if used_5h >= 80 else "#38bdf8"
+            # 5h Limit Text & Bar (turns amber if used >= 80%, rose if used >= 90%)
+            col_5h = get_quota_color(used_5h)
             refs["lbl_5h_val"].config(text=f"{used_5h}% used  ({pct_5h}% left)", fg=col_5h)
             refs["rem_5h_pct"] = pct_5h
             refs["used_5h_pct"] = used_5h
@@ -1093,8 +1102,8 @@ class AccountSwitchboardApp:
             refs["last_5h_col"] = col_5h
             self.render_canvas_bar(refs["canvas_5h"], used_5h, col_5h)
 
-            # Weekly Limit Text & Bar (turns red if used >= 80% / remaining <= 20%)
-            col_wk = COLOR_WARN if used_wk >= 80 else "#38bdf8"
+            # Weekly Limit Text & Bar (turns amber if used >= 80%, rose if used >= 90%)
+            col_wk = get_quota_color(used_wk)
             refs["lbl_wk_val"].config(text=f"{used_wk}% used  ({pct_wk}% left)", fg=col_wk)
             refs["rem_wk_pct"] = pct_wk
             refs["used_wk_pct"] = used_wk

@@ -1353,11 +1353,11 @@ def print_claude_status():
     s_rem = cs.get('session_rem_pct', 89)
     w_used = cs.get('weekly_used_pct', 92)
     w_rem = cs.get('weekly_rem_pct', 8)
-    w_warn = " [CRITICAL WARNING / 8% REMAINING]" if w_used >= 85 else ""
+    w_warn = " [CRITICAL WARNING]" if w_used >= 85 else ""
 
     print(f"\n[Claude for Windows Live Quotas (Official Desktop App)]")
-    print(f"  - Session Limit (5h) : {s_used}% Used ({s_rem}% Remaining)  •  {cs.get('session_reset_desc', 'Resets in 4 hr 36 min')}")
-    print(f"  - Weekly Limit (7d)  : {w_used}% Used ({w_rem}% Remaining)   •  {cs.get('weekly_reset_desc', 'Resets Mon 7:00 PM')}{w_warn}")
+    print(f"  - Session Limit (5h) : {s_used:>2}% Used ({s_rem:>2}% Remaining) | {cs.get('session_reset_desc', 'Resets in 4 hr 36 min')}")
+    print(f"  - Weekly Window (7d) : {w_used:>2}% Used ({w_rem:>2}% Remaining)  | {cs.get('weekly_reset_desc', 'Resets Mon 7:00 PM')}{w_warn}")
     if cs.get("quota_source"):
         print(f"  - Quota Data Source  : {cs['quota_source']}")
 
@@ -1466,8 +1466,8 @@ def print_status():
         print(f"  * Desktop App State   : {app_str}")
         if show_model_only:
             print(f"  * Active Model        : {cs.get('active_model', 'Opus 5.5 High')}")
-        print(f"  * Session Limit (5h)  : {s_u}% Used ({s_r}% Remaining) | {cs.get('session_reset_desc', 'Resets in 4 hr 36 min')}")
-        print(f"  * Weekly Window (7d)  : {w_u}% Used ({w_r}% Remaining)  | {cs.get('weekly_reset_desc', 'Resets Mon 7:00 PM')}{w_warn}")
+        print(f"  * Session Limit (5h)  : {s_u:>2}% Used ({s_r:>2}% Remaining) | {cs.get('session_reset_desc', 'Resets in 4 hr 36 min')}")
+        print(f"  * Weekly Window (7d)  : {w_u:>2}% Used ({w_r:>2}% Remaining)  | {cs.get('weekly_reset_desc', 'Resets Mon 7:00 PM')}{w_warn}")
 
     print("\n" + "-" * 70)
     print("[Commands]")

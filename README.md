@@ -192,7 +192,8 @@ The application works out-of-the-box with zero configuration, automatically dete
   "ui": {
     "refresh_interval_seconds": 60,
     "theme": "dark_slate",
-    "auto_relaunch_on_switch": false
+    "auto_relaunch_on_switch": false,
+    "show_model_only_quota": false
   },
   "security": {
     "confirm_relaunch": false,
@@ -203,6 +204,7 @@ The application works out-of-the-box with zero configuration, automatically dete
 
 ### Options Breakdown
 * **`antigravity_exe_path`**: Path to `Antigravity.exe`. If empty (`""`), the application dynamically scans running processes, `%LOCALAPPDATA%\Programs\antigravity`, `%PROGRAMFILES%\Antigravity`, and `%PATH%`.
+* **`ui.show_model_only_quota`**: When set to `false` (default), hides secondary model-specific quotas (e.g. 3P Claude/GPT allocations on Google accounts and active model tags) to focus purely on true account-level 5-hour and weekly subscription limits. Set to `true` to display them.
 * **`claude_profile.enabled`**: Set to `false` if you do not use Claude for Windows and want to hide the Claude card.
 * **`claude_profile.desktop_app_dir`**: Custom location for Claude LevelDB/LocalStorage files if using a custom package or portable installation. Auto-detected across all Windows MSIX package builds if empty.
 * **`ui.refresh_interval_seconds`**: Interval for background quota polling (default: `60` seconds).
