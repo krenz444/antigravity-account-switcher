@@ -14,7 +14,9 @@
     "refresh_interval_seconds": 60,
     "theme": "dark_slate",
     "auto_relaunch_on_switch": false,
-    "show_model_only_quota": false
+    "show_model_only_quota": false,
+    "default_width": 1020,
+    "default_height": 720
   },
   "security": {
     "confirm_relaunch": false,

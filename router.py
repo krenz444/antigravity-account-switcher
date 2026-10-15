@@ -177,7 +177,9 @@ def get_config():
             "refresh_interval_seconds": 60,
             "theme": "dark_slate",
             "auto_relaunch_on_switch": False,
-            "show_model_only_quota": False
+            "show_model_only_quota": False,
+            "default_width": 1020,
+            "default_height": 720
         },
         "security": {
             "confirm_relaunch": False,

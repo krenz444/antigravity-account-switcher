@@ -93,17 +93,43 @@ def apply_dark_titlebar(root):
         pass
 
 
-def center_window(root, width=1020, height=720):
-    """Positions the window at the visual center of the primary monitor."""
+def restore_window_geometry(root, saved_geom=None, default_width=1020, default_height=720):
+    """Restores saved window width, height, and position, or centers with default dimensions."""
     try:
         root.update_idletasks()
         sw = root.winfo_screenwidth()
         sh = root.winfo_screenheight()
-        x = max(0, int((sw - width) / 2))
-        y = max(0, int((sh - height) / 2.3))
-        root.geometry(f"{width}x{height}+{x}+{y}")
+
+        w = default_width
+        h = default_height
+        x = None
+        y = None
+        maximized = False
+
+        if saved_geom and isinstance(saved_geom, dict):
+            w = saved_geom.get("width", default_width)
+            h = saved_geom.get("height", default_height)
+            x = saved_geom.get("x")
+            y = saved_geom.get("y")
+            maximized = saved_geom.get("maximized", False)
+
+        # Enforce minimum size and screen boundary clamping
+        w = max(920, min(int(w), sw))
+        h = max(640, min(int(h), sh))
+
+        # Check if saved coordinates fall within active visible desktop space
+        if x is None or y is None or x + w < 100 or x > sw - 100 or y < 0 or y > sh - 100:
+            x = max(0, int((sw - w) / 2))
+            y = max(0, int((sh - h) / 2.3))
+
+        root.geometry(f"{w}x{h}+{x}+{y}")
+        if maximized:
+            try:
+                root.state("zoomed")
+            except Exception:
+                pass
     except Exception:
-        root.geometry(f"{width}x{height}")
+        root.geometry(f"{default_width}x{default_height}")
 
 
 def make_button(parent, text, font, bg, fg, hover_bg, hover_fg=None, command=None, padx=12, pady=5, cursor="hand2", state=tk.NORMAL):
@@ -134,10 +160,28 @@ def make_button(parent, text, font, bg, fg, hover_bg, hover_fg=None, command=Non
 class AccountSwitchboardApp:
     def __init__(self, root):
         self.root = root
+
+        # Load configurable defaults and persistent runtime window geometry
+        cfg = router.get_config()
+        ui_cfg = cfg.get("ui", {})
+        default_w = ui_cfg.get("default_width", 1020)
+        default_h = ui_cfg.get("default_height", 720)
+
+        state = router.get_state()
+        saved_geom = state.get("window_geometry")
+
+        self.last_normal_width = saved_geom.get("width") if saved_geom else default_w
+        self.last_normal_height = saved_geom.get("height") if saved_geom else default_h
+        self.last_normal_x = saved_geom.get("x") if saved_geom else None
+        self.last_normal_y = saved_geom.get("y") if saved_geom else None
+
         self.root.title("Antigravity Multi-Account Switchboard & Quota Monitor")
-        center_window(self.root, 1020, 720)
         self.root.minsize(920, 640)
+        restore_window_geometry(self.root, saved_geom, default_w, default_h)
         self.root.configure(bg=BG_MAIN)
+
+        # Track window resize & movement so normal width/position are always remembered
+        self.root.bind("<Configure>", self.on_window_configure, add="+")
 
         # Apply Native Windows Dark Titlebar
         apply_dark_titlebar(self.root)
@@ -1176,8 +1220,52 @@ class AccountSwitchboardApp:
             combined_str = "  •  ".join(timer_parts) if timer_parts else "Limit: Active"
             refs["timer_lbl"].config(text=f"⏱ {combined_str}", fg=TEXT_MUTED)
 
+    def on_window_configure(self, event):
+        """Continuously tracks normal window geometry so width and position are always remembered."""
+        if self.is_destroyed:
+            return
+        if event.widget == self.root:
+            try:
+                if self.root.state() == "normal":
+                    w = self.root.winfo_width()
+                    h = self.root.winfo_height()
+                    x = self.root.winfo_x()
+                    y = self.root.winfo_y()
+                    if w >= 200 and h >= 200:
+                        self.last_normal_width = w
+                        self.last_normal_height = h
+                        self.last_normal_x = x
+                        self.last_normal_y = y
+            except Exception:
+                pass
+
     def on_close(self):
-        """Clean window destruction handler: cancels pending timers and safely frees resources."""
+        """Clean window destruction handler: remembers window geometry, cancels pending timers, and safely frees resources."""
+        # Persist window width, height, and desktop position
+        try:
+            state = router.get_state()
+            w = self.last_normal_width or self.root.winfo_width()
+            h = self.last_normal_height or self.root.winfo_height()
+            x = self.last_normal_x if self.last_normal_x is not None else self.root.winfo_x()
+            y = self.last_normal_y if self.last_normal_y is not None else self.root.winfo_y()
+            is_max = False
+            try:
+                is_max = (self.root.state() == "zoomed")
+            except Exception:
+                pass
+
+            if w >= 200 and h >= 200:
+                state["window_geometry"] = {
+                    "width": int(w),
+                    "height": int(h),
+                    "x": int(x),
+                    "y": int(y),
+                    "maximized": bool(is_max)
+                }
+                router.save_state(state)
+        except Exception:
+            pass
+
         self.is_destroyed = True
         if self._refresh_timer_id:
             try:
