@@ -13,7 +13,8 @@
   "ui": {
     "refresh_interval_seconds": 60,
     "theme": "dark_slate",
-    "auto_relaunch_on_switch": false
+    "auto_relaunch_on_switch": false,
+    "show_model_only_quota": false
   },
   "security": {
     "confirm_relaunch": false,

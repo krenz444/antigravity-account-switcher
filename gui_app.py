@@ -339,6 +339,8 @@ class AccountSwitchboardApp:
         self.action_buttons.clear()
 
         profiles = router.list_profiles()
+        cfg = router.get_config()
+        show_model_only = cfg.get("ui", {}).get("show_model_only_quota", False)
         state = router.get_state()
         staged_name = state.get("active_google_profile", "google_1")
         staged_email = router.get_active_email()
@@ -579,15 +581,18 @@ class AccountSwitchboardApp:
             canvas_wk = tk.Canvas(mid_col, height=7, bg=BG_PROGRESS_TRACK, highlightthickness=0)
             canvas_wk.pack(fill=tk.X, pady=(1, 4))
 
-            # 3. Timers & Secondary Quotas Row (Claude packed RIGHT first, timer packed LEFT)
+            # 3. Timers Row
             timer_row = tk.Frame(mid_col, bg=card_bg)
             timer_row.pack(fill=tk.X, pady=(2, 0))
 
-            claude_lbl = tk.Label(timer_row, text="Claude/GPT: 100%", font=("Segoe UI", 8), fg=TEXT_MUTED, bg=card_bg)
-            claude_lbl.pack(side=tk.RIGHT)
+            if show_model_only:
+                claude_lbl = tk.Label(timer_row, text="Claude/GPT: 100%", font=("Segoe UI", 8), fg=TEXT_MUTED, bg=card_bg)
+                claude_lbl.pack(side=tk.RIGHT)
+            else:
+                claude_lbl = None
 
             timer_lbl = tk.Label(timer_row, text="Timer: Initializing...", font=("Segoe UI", 8, "bold"), fg=TEXT_MUTED, bg=card_bg)
-            timer_lbl.pack(side=tk.LEFT)
+            timer_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
             # Right Section: Action Controls
             right_col = tk.Frame(card, bg=card_bg)
@@ -809,14 +814,17 @@ class AccountSwitchboardApp:
             c_detail_row = tk.Frame(c_mid_col, bg=BG_CARD_CLAUDE)
             c_detail_row.pack(fill=tk.X, pady=(2, 0))
 
-            c_billing_lbl = tk.Label(
-                c_detail_row,
-                text=f"Model: {model_init}  🔴" if init_wk_used >= 80 else f"Model: {model_init}",
-                font=("Segoe UI", 8, "bold"),
-                fg="#f87171" if init_wk_used >= 80 else TEXT_MUTED,
-                bg=BG_CARD_CLAUDE
-            )
-            c_billing_lbl.pack(side=tk.RIGHT)
+            if show_model_only:
+                c_billing_lbl = tk.Label(
+                    c_detail_row,
+                    text=f"Model: {model_init}  🔴" if init_wk_used >= 80 else f"Model: {model_init}",
+                    font=("Segoe UI", 8, "bold"),
+                    fg="#f87171" if init_wk_used >= 80 else TEXT_MUTED,
+                    bg=BG_CARD_CLAUDE
+                )
+                c_billing_lbl.pack(side=tk.RIGHT)
+            else:
+                c_billing_lbl = None
 
             c_timer_lbl = tk.Label(
                 c_detail_row,
@@ -825,7 +833,7 @@ class AccountSwitchboardApp:
                 fg=TEXT_MUTED,
                 bg=BG_CARD_CLAUDE
             )
-            c_timer_lbl.pack(side=tk.LEFT)
+            c_timer_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
             # Right Section: Action Button (Open Windows App)
             c_right_col = tk.Frame(c_card, bg=BG_CARD_CLAUDE)
@@ -1006,10 +1014,11 @@ class AccountSwitchboardApp:
                     text=f"⏱ {s_reset}  •  {w_reset}",
                     fg=TEXT_MUTED
                 )
-                refs["claude_lbl"].config(
-                    text=f"Model: {model_str}  🔴" if w_used >= 80 else f"Model: {model_str}",
-                    fg="#f87171" if w_used >= 80 else TEXT_MUTED
-                )
+                if refs.get("claude_lbl"):
+                    refs["claude_lbl"].config(
+                        text=f"Model: {model_str}  🔴" if w_used >= 80 else f"Model: {model_str}",
+                        fg="#f87171" if w_used >= 80 else TEXT_MUTED
+                    )
 
                 is_running = cs.get("app_running", False) if cs else False
                 pids = cs.get("app_pids", []) if cs else []
@@ -1024,7 +1033,8 @@ class AccountSwitchboardApp:
                 refs["lbl_5h_val"].config(text="Connect Required", fg=COLOR_WARN)
                 refs["lbl_wk_val"].config(text="Connect Required", fg=COLOR_WARN)
                 refs["timer_lbl"].config(text="● Click Switch to connect with Google OAuth", fg=COLOR_WARN)
-                refs["claude_lbl"].config(text="Claude/GPT: --", fg=TEXT_DIM)
+                if refs.get("claude_lbl"):
+                    refs["claude_lbl"].config(text="Claude/GPT: --", fg=TEXT_DIM)
                 refs["last_5h_pct"] = None
                 refs["last_wk_pct"] = None
                 refs["exp_5h_ts"] = None
@@ -1072,12 +1082,13 @@ class AccountSwitchboardApp:
                 refs["exp_wk_ts"] = None
 
             # Claude / GPT
-            c_5h = q.get("claude_5h_pct", 100)
-            c_wk = q.get("claude_weekly_pct", 100)
-            if c_5h == c_wk:
-                refs["claude_lbl"].config(text=f"Claude/GPT: {c_5h}%", fg=TEXT_MUTED)
-            else:
-                refs["claude_lbl"].config(text=f"Claude: {c_5h}% (5h) / {c_wk}% (wk)", fg=TEXT_MUTED)
+            if refs.get("claude_lbl"):
+                c_5h = q.get("claude_5h_pct", 100)
+                c_wk = q.get("claude_weekly_pct", 100)
+                if c_5h == c_wk:
+                    refs["claude_lbl"].config(text=f"Claude/GPT: {c_5h}%", fg=TEXT_MUTED)
+                else:
+                    refs["claude_lbl"].config(text=f"Claude: {c_5h}% (5h) / {c_wk}% (wk)", fg=TEXT_MUTED)
 
         self.update_timers_display()
 

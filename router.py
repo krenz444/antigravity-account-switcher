@@ -176,7 +176,8 @@ def get_config():
         "ui": {
             "refresh_interval_seconds": 60,
             "theme": "dark_slate",
-            "auto_relaunch_on_switch": False
+            "auto_relaunch_on_switch": False,
+            "show_model_only_quota": False
         },
         "security": {
             "confirm_relaunch": False,
@@ -1296,6 +1297,9 @@ def print_claude_status():
         print("=" * 70)
         return
 
+    cfg = get_config()
+    show_model_only = cfg.get("ui", {}).get("show_model_only_quota", False)
+
     app_state = f"Running (PID: {cs['app_pids'][0]}, {len(cs['app_pids'])} procs)" if cs.get("app_running") else "Ready / Closed"
     print(f"\n[Subscription Details]")
     print(f"  Account Email        : {cs['email'] or 'Unknown'}")
@@ -1306,7 +1310,8 @@ def print_claude_status():
     if cs.get("org_name"):
         print(f"  Organization         : {cs['org_name']}")
     print(f"  Desktop App State    : {app_state}")
-    print(f"  Active Model         : {cs.get('active_model', 'Opus 5.5 High')}")
+    if show_model_only:
+        print(f"  Active Model         : {cs.get('active_model', 'Opus 5.5 High')}")
 
     s_used = cs.get('session_used_pct', 11)
     s_rem = cs.get('session_rem_pct', 89)
@@ -1320,9 +1325,10 @@ def print_claude_status():
     if cs.get("quota_source"):
         print(f"  - Quota Data Source  : {cs['quota_source']}")
 
-    print(f"\n[Antigravity 3P Claude Quota Allocation]")
-    print(f"  - 5-Hour Limit Remaining : {cs['antigravity_3p_5h']}%")
-    print(f"  - Weekly Limit Remaining : {cs['antigravity_3p_weekly']}%")
+    if show_model_only:
+        print(f"\n[Antigravity 3P Claude Quota Allocation]")
+        print(f"  - 5-Hour Limit Remaining : {cs['antigravity_3p_5h']}%")
+        print(f"  - Weekly Limit Remaining : {cs['antigravity_3p_weekly']}%")
 
     print("\n" + "=" * 70)
 
@@ -1346,6 +1352,9 @@ def print_status():
         print(f"                          (Restart Antigravity once active queries complete to switch IDE)")
     else:
         print(f"  Status Notice         : IDE session is fully synchronized with staged account.")
+
+    cfg = get_config()
+    show_model_only = cfg.get("ui", {}).get("show_model_only_quota", False)
 
     profiles = list_profiles()
     if not profiles:
@@ -1389,7 +1398,8 @@ def print_status():
                 print(f"      - Weekly Limit Remaining : {q['weekly_pct']:>3}%{rw_str}")
                 if q.get('weekly_desc'):
                     print(f"        {q['weekly_desc']}")
-                print(f"      - Claude/GPT Limit       : {q['claude_5h_pct']}% (5h) / {q['claude_weekly_pct']}% (weekly)")
+                if show_model_only:
+                    print(f"      - Claude/GPT Limit       : {q['claude_5h_pct']}% (5h) / {q['claude_weekly_pct']}% (weekly)")
             else:
                 print(f"      - Google AI Tier         : {tier_str}")
                 print(f"      - Live Quota: Not connected (Run: ai-switch auth {name})")
@@ -1407,7 +1417,8 @@ def print_status():
         print(f"  * Account Email       : {cs['email'] or 'Unknown'}")
         print(f"  * Subscription Tier   : {cs['tier_label']} [Stripe Pro] | {cs['billing_type'] or 'Stripe Subscription'}")
         print(f"  * Desktop App State   : {app_str}")
-        print(f"  * Active Model        : {cs.get('active_model', 'Opus 5.5 High')}")
+        if show_model_only:
+            print(f"  * Active Model        : {cs.get('active_model', 'Opus 5.5 High')}")
         print(f"  * Session Limit (5h)  : {s_u}% Used ({s_r}% Remaining) | {cs.get('session_reset_desc', 'Resets in 4 hr 36 min')}")
         print(f"  * Weekly Window (7d)  : {w_u}% Used ({w_r}% Remaining)  | {cs.get('weekly_reset_desc', 'Resets Mon 7:00 PM')}{w_warn}")
 
