@@ -18,6 +18,7 @@ from ctypes import wintypes
 import datetime as dt
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -562,7 +563,7 @@ class AccountSwitchboardApp:
             lbl_5h_val = tk.Label(row_5h, text="Querying API...", font=("Segoe UI", 11, "bold"), fg=TEXT_MAIN, bg=card_bg)
             lbl_5h_val.pack(side=tk.RIGHT)
 
-            lbl_5h_title = tk.Label(row_5h, text="5-Hour Limit Remaining:", font=("Segoe UI", 8, "bold"), fg=TEXT_MUTED, bg=card_bg)
+            lbl_5h_title = tk.Label(row_5h, text="Session limit (5h):", font=("Segoe UI", 8, "bold"), fg=TEXT_MUTED, bg=card_bg)
             lbl_5h_title.pack(side=tk.LEFT)
 
             canvas_5h = tk.Canvas(mid_col, height=7, bg=BG_PROGRESS_TRACK, highlightthickness=0)
@@ -575,7 +576,7 @@ class AccountSwitchboardApp:
             lbl_wk_val = tk.Label(row_wk, text="Querying API...", font=("Segoe UI", 11, "bold"), fg=TEXT_MAIN, bg=card_bg)
             lbl_wk_val.pack(side=tk.RIGHT)
 
-            lbl_wk_title = tk.Label(row_wk, text="Weekly Limit Remaining:", font=("Segoe UI", 8, "bold"), fg=TEXT_MUTED, bg=card_bg)
+            lbl_wk_title = tk.Label(row_wk, text="Weekly window (7d):", font=("Segoe UI", 8, "bold"), fg=TEXT_MUTED, bg=card_bg)
             lbl_wk_title.pack(side=tk.LEFT)
 
             canvas_wk = tk.Canvas(mid_col, height=7, bg=BG_PROGRESS_TRACK, highlightthickness=0)
@@ -591,7 +592,7 @@ class AccountSwitchboardApp:
             else:
                 claude_lbl = None
 
-            timer_lbl = tk.Label(timer_row, text="Timer: Initializing...", font=("Segoe UI", 8, "bold"), fg=TEXT_MUTED, bg=card_bg)
+            timer_lbl = tk.Label(timer_row, text="⏱ Syncing quota timers...", font=("Segoe UI", 8, "bold"), fg=TEXT_MUTED, bg=card_bg)
             timer_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
             # Right Section: Action Controls
@@ -791,7 +792,7 @@ class AccountSwitchboardApp:
             c_lbl_5h_val = tk.Label(c_row_5h, text=f"{init_5h_used}% used  ({init_5h_rem}% left)", font=("Segoe UI", 11, "bold"), fg=init_5h_txt, bg=BG_CARD_CLAUDE)
             c_lbl_5h_val.pack(side=tk.RIGHT)
 
-            c_lbl_5h_title = tk.Label(c_row_5h, text="Session limit:", font=("Segoe UI", 8, "bold"), fg=TEXT_MUTED, bg=BG_CARD_CLAUDE)
+            c_lbl_5h_title = tk.Label(c_row_5h, text="Session limit (5h):", font=("Segoe UI", 8, "bold"), fg=TEXT_MUTED, bg=BG_CARD_CLAUDE)
             c_lbl_5h_title.pack(side=tk.LEFT)
 
             c_canvas_5h = tk.Canvas(c_mid_col, height=7, bg=BG_PROGRESS_TRACK, highlightthickness=0)
@@ -804,7 +805,7 @@ class AccountSwitchboardApp:
             c_lbl_wk_val = tk.Label(c_row_wk, text=f"{init_wk_used}% used  ({init_wk_rem}% left)", font=("Segoe UI", 11, "bold"), fg=init_wk_txt, bg=BG_CARD_CLAUDE)
             c_lbl_wk_val.pack(side=tk.RIGHT)
 
-            c_lbl_wk_title = tk.Label(c_row_wk, text="Weekly:", font=("Segoe UI", 8, "bold"), fg=TEXT_MUTED, bg=BG_CARD_CLAUDE)
+            c_lbl_wk_title = tk.Label(c_row_wk, text="Weekly window (7d):", font=("Segoe UI", 8, "bold"), fg=TEXT_MUTED, bg=BG_CARD_CLAUDE)
             c_lbl_wk_title.pack(side=tk.LEFT)
 
             c_canvas_wk = tk.Canvas(c_mid_col, height=7, bg=BG_PROGRESS_TRACK, highlightthickness=0)
@@ -860,6 +861,14 @@ class AccountSwitchboardApp:
             c_switch_btn.pack(expand=True, pady=4)
             self.action_buttons.append(c_switch_btn)
 
+            # Parse initial epoch deadline for Claude 5h countdown
+            init_claude_exp_5h = None
+            m = re.search(r'(\d+)\s*hr(?:\s*(\d+)\s*min)?', s_reset_init)
+            if m:
+                h = int(m.group(1))
+                mins = int(m.group(2) or 0)
+                init_claude_exp_5h = time.time() + h * 3600 + mins * 60
+
             self.cards["claude"] = {
                 "card": c_card,
                 "is_live": False,
@@ -872,12 +881,16 @@ class AccountSwitchboardApp:
                 "timer_lbl": c_timer_lbl,
                 "status_pill": c_status_pill,
                 "claude_lbl": c_billing_lbl,
+                "rem_5h_pct": init_5h_rem,
+                "used_5h_pct": init_5h_used,
+                "rem_wk_pct": init_wk_rem,
+                "used_wk_pct": init_wk_used,
                 "last_5h_pct": init_5h_used,
                 "last_5h_col": init_5h_col,
                 "last_wk_pct": init_wk_used,
                 "last_wk_col": init_wk_col,
-                "exp_5h_ts": None,
-                "exp_wk_ts": None
+                "exp_5h_ts": init_claude_exp_5h,
+                "weekly_reset_str": w_reset_init
             }
 
             c_canvas_5h.bind("<Configure>", lambda e, n="claude": self.redraw_bar(n, "5h"))
@@ -999,6 +1012,10 @@ class AccountSwitchboardApp:
 
                 refs["lbl_5h_val"].config(text=f"{s_used}% used  ({s_rem}% left)", fg=txt_col_5h)
                 refs["lbl_wk_val"].config(text=f"{w_used}% used  ({w_rem}% left)", fg=txt_col_wk)
+                refs["rem_5h_pct"] = s_rem
+                refs["used_5h_pct"] = s_used
+                refs["rem_wk_pct"] = w_rem
+                refs["used_wk_pct"] = w_used
                 refs["last_5h_pct"] = s_used
                 refs["last_5h_col"] = col_5h
                 refs["last_wk_pct"] = w_used
@@ -1008,12 +1025,18 @@ class AccountSwitchboardApp:
 
                 s_reset = cs.get("session_reset_desc", "Resets in 4 hr 36 min") if cs else "Resets in 4 hr 36 min"
                 w_reset = cs.get("weekly_reset_desc", "Resets Mon 7:00 PM") if cs else "Resets Mon 7:00 PM"
-                model_str = cs.get("active_model", "Opus 5.5 High") if cs else "Opus 5.5 High"
+                refs["weekly_reset_str"] = w_reset
 
-                refs["timer_lbl"].config(
-                    text=f"⏱ {s_reset}  •  {w_reset}",
-                    fg=TEXT_MUTED
-                )
+                # Parse numeric epoch deadline for Claude 5h countdown
+                m = re.search(r'(\d+)\s*hr(?:\s*(\d+)\s*min)?', s_reset)
+                if m:
+                    h = int(m.group(1))
+                    mins = int(m.group(2) or 0)
+                    refs["exp_5h_ts"] = time.time() + h * 3600 + mins * 60
+                else:
+                    refs["exp_5h_ts"] = None
+
+                model_str = cs.get("active_model", "Opus 5.5 High") if cs else "Opus 5.5 High"
                 if refs.get("claude_lbl"):
                     refs["claude_lbl"].config(
                         text=f"Model: {model_str}  🔴" if w_used >= 80 else f"Model: {model_str}",
@@ -1035,16 +1058,22 @@ class AccountSwitchboardApp:
                 refs["timer_lbl"].config(text="● Click Switch to connect with Google OAuth", fg=COLOR_WARN)
                 if refs.get("claude_lbl"):
                     refs["claude_lbl"].config(text="Claude/GPT: --", fg=TEXT_DIM)
+                refs["rem_5h_pct"] = None
+                refs["used_5h_pct"] = None
+                refs["rem_wk_pct"] = None
+                refs["used_wk_pct"] = None
                 refs["last_5h_pct"] = None
                 refs["last_wk_pct"] = None
                 refs["exp_5h_ts"] = None
-                refs["exp_wk_ts"] = None
+                refs["weekly_reset_str"] = None
                 self.render_canvas_bar(refs["canvas_5h"], 0, COLOR_WARN)
                 self.render_canvas_bar(refs["canvas_wk"], 0, COLOR_WARN)
                 continue
 
             pct_5h = q.get("5h_pct", 100)
+            used_5h = max(0, 100 - pct_5h)
             pct_wk = q.get("weekly_pct", 100)
+            used_wk = max(0, 100 - pct_wk)
 
             # Update tier display dynamically if available
             tier_str = q.get("tier_label", "Free Tier") if q else "Free Tier"
@@ -1055,19 +1084,23 @@ class AccountSwitchboardApp:
                     fg="#93c5fd" if is_paid else TEXT_MUTED
                 )
 
-            # 5h Limit Text & Bar
-            col_5h = COLOR_ACTIVE if pct_5h > 40 else (COLOR_WARN if pct_5h > 15 else COLOR_DANGER)
-            refs["lbl_5h_val"].config(text=f"{pct_5h}%", fg=col_5h)
-            refs["last_5h_pct"] = pct_5h
+            # 5h Limit Text & Bar (turns red if used >= 80% / remaining <= 20%)
+            col_5h = COLOR_WARN if used_5h >= 80 else "#38bdf8"
+            refs["lbl_5h_val"].config(text=f"{used_5h}% used  ({pct_5h}% left)", fg=col_5h)
+            refs["rem_5h_pct"] = pct_5h
+            refs["used_5h_pct"] = used_5h
+            refs["last_5h_pct"] = used_5h
             refs["last_5h_col"] = col_5h
-            self.render_canvas_bar(refs["canvas_5h"], pct_5h, col_5h)
+            self.render_canvas_bar(refs["canvas_5h"], used_5h, col_5h)
 
-            # Weekly Limit Text & Bar
-            col_wk = COLOR_ACTIVE if pct_wk > 40 else (COLOR_WARN if pct_wk > 15 else COLOR_DANGER)
-            refs["lbl_wk_val"].config(text=f"{pct_wk}%", fg=col_wk)
-            refs["last_wk_pct"] = pct_wk
+            # Weekly Limit Text & Bar (turns red if used >= 80% / remaining <= 20%)
+            col_wk = COLOR_WARN if used_wk >= 80 else "#38bdf8"
+            refs["lbl_wk_val"].config(text=f"{used_wk}% used  ({pct_wk}% left)", fg=col_wk)
+            refs["rem_wk_pct"] = pct_wk
+            refs["used_wk_pct"] = used_wk
+            refs["last_wk_pct"] = used_wk
             refs["last_wk_col"] = col_wk
-            self.render_canvas_bar(refs["canvas_wk"], pct_wk, col_wk)
+            self.render_canvas_bar(refs["canvas_wk"], used_wk, col_wk)
 
             # Pre-compute numeric timestamp deadlines once to make per-second ticks zero-allocation
             reset_5h_str = q.get("5h_reset")
@@ -1076,10 +1109,8 @@ class AccountSwitchboardApp:
                 refs["exp_5h_ts"] = dt.datetime.fromisoformat(reset_5h_str.replace("Z", "+00:00")).timestamp() if reset_5h_str else None
             except Exception:
                 refs["exp_5h_ts"] = None
-            try:
-                refs["exp_wk_ts"] = dt.datetime.fromisoformat(reset_wk_str.replace("Z", "+00:00")).timestamp() if reset_wk_str else None
-            except Exception:
-                refs["exp_wk_ts"] = None
+
+            refs["weekly_reset_str"] = router.format_weekly_reset(reset_wk_str)
 
             # Claude / GPT
             if refs.get("claude_lbl"):
@@ -1099,33 +1130,42 @@ class AccountSwitchboardApp:
         now_ts = time.time()
 
         for name, refs in self.cards.items():
-            exp_5h = refs.get("exp_5h_ts")
-            exp_wk = refs.get("exp_wk_ts")
-
-            if not exp_5h and not exp_wk:
-                continue
-
             timer_parts = []
-            if exp_5h:
+
+            # 1. 5-Hour / Session timer
+            exp_5h = refs.get("exp_5h_ts")
+            used_5h = refs.get("used_5h_pct", 0)
+            rem_5h = refs.get("rem_5h_pct", 100)
+
+            if rem_5h is not None and rem_5h >= 100:
+                # Quota has NOT been started yet! Do NOT show a countdown!
+                timer_parts.append("5h: Ready (100%)")
+            elif exp_5h:
                 diff_5h = int(exp_5h - now_ts)
                 if diff_5h > 0:
                     h, rem_sec = divmod(diff_5h, 3600)
                     m = rem_sec // 60
-                    timer_parts.append(f"5h in {h}h {m:02d}m")
+                    if h > 0:
+                        timer_parts.append(f"Resets in {h} hr {m:02d} min")
+                    else:
+                        timer_parts.append(f"Resets in {m} min")
                 else:
                     timer_parts.append("5h: Refreshed")
+            else:
+                timer_parts.append("5h: Ready")
 
-            if exp_wk:
-                diff_wk = int(exp_wk - now_ts)
-                if diff_wk > 0:
-                    d, rem_sec = divmod(diff_wk, 86400)
-                    h = rem_sec // 3600
-                    timer_parts.append(f"Wk in {d}d {h}h")
-                else:
-                    timer_parts.append("Wk: Refreshed")
+            # 2. Weekly Reset Time
+            rem_wk = refs.get("rem_wk_pct", 100)
+            w_str = refs.get("weekly_reset_str")
+            if rem_wk is not None and rem_wk >= 100:
+                timer_parts.append("Weekly: Ready")
+            elif w_str:
+                timer_parts.append(w_str)
+            else:
+                timer_parts.append("Weekly: Active")
 
-            combined_str = " • ".join(timer_parts) if timer_parts else "Limit: Active"
-            refs["timer_lbl"].config(text=f"⏱ {combined_str}", fg=COLOR_ACTIVE)
+            combined_str = "  •  ".join(timer_parts) if timer_parts else "Limit: Active"
+            refs["timer_lbl"].config(text=f"⏱ {combined_str}", fg=TEXT_MUTED)
 
     def on_close(self):
         """Clean window destruction handler: cancels pending timers and safely frees resources."""

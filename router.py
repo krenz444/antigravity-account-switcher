@@ -671,6 +671,42 @@ def parse_quota_data(data):
     return res
 
 
+def format_weekly_reset(iso_or_desc_str):
+    """Formats an ISO reset timestamp into a friendly 'Resets Sat 5:06 PM' string."""
+    if not iso_or_desc_str:
+        return "Resets Mon 7:00 PM"
+    if str(iso_or_desc_str).startswith("Resets "):
+        return str(iso_or_desc_str)
+    try:
+        d = dt.datetime.fromisoformat(str(iso_or_desc_str).replace("Z", "+00:00")).astimezone()
+        time_str = d.strftime("%I:%M %p").lstrip("0")
+        day_str = d.strftime("%a")
+        return f"Resets {day_str} {time_str}"
+    except Exception:
+        return f"Resets {iso_or_desc_str}"
+
+
+def format_session_reset(iso_str, pct_remaining=None):
+    """Formats session reset time into 'Resets in 2 hr 38 min' or 'Ready (Window starts on first prompt)'."""
+    if pct_remaining is not None and pct_remaining >= 100:
+        return "Ready (Window starts on first prompt)"
+    if not iso_str:
+        return "Ready"
+    try:
+        target_ts = dt.datetime.fromisoformat(str(iso_str).replace("Z", "+00:00")).timestamp()
+        diff = int(target_ts - time.time())
+        if diff <= 0:
+            return "Refreshed"
+        h, rem = divmod(diff, 3600)
+        m = rem // 60
+        if h > 0:
+            return f"Resets in {h} hr {m:02d} min"
+        else:
+            return f"Resets in {m} min"
+    except Exception:
+        return f"Resets {iso_str}"
+
+
 # Public Antigravity Desktop Client OAuth Credentials (RFC 8252 Installed Application Flow)
 # Encoded via byte transform to prevent false-positive push protection scanner alerts
 def _decode_cred(data: bytes, key: int = 0x5A) -> str:
@@ -1389,15 +1425,26 @@ def print_status():
             print(f"\n  * #{num_str} {email}{status_tag}  [Tier: {tier_str}]:")
 
             if q and q.get("5h_pct") is not None:
-                r5_str = f" (resets {q['5h_reset']})" if q.get('5h_reset') else ""
-                rw_str = f" (resets {q['weekly_reset']})" if q.get('weekly_reset') else ""
+                p_5h = q.get('5h_pct', 100)
+                used_5h = max(0, 100 - p_5h)
+                p_wk = q.get('weekly_pct', 100)
+                used_wk = max(0, 100 - p_wk)
+
+                s_reset_str = format_session_reset(q.get('5h_reset'), p_5h)
+                w_reset_str = format_weekly_reset(q.get('weekly_reset'))
+                w_warn = " [CRITICAL WARNING]" if used_wk >= 85 else ""
+
                 print(f"      - Google AI Tier         : {tier_str} (Antigravity Core / Upgradeable to Pro)")
-                print(f"      - 5-Hour Limit Remaining : {q['5h_pct']:>3}%{r5_str}")
-                if q.get('5h_desc'):
-                    print(f"        {q['5h_desc']}")
-                print(f"      - Weekly Limit Remaining : {q['weekly_pct']:>3}%{rw_str}")
-                if q.get('weekly_desc'):
-                    print(f"        {q['weekly_desc']}")
+                if p_5h >= 100:
+                    print(f"      - Session Limit (5h)     : 0% Used (100% Remaining) | Ready (Window starts on first prompt)")
+                else:
+                    print(f"      - Session Limit (5h)     : {used_5h:>2}% Used ({p_5h:>2}% Remaining) | {s_reset_str}")
+
+                if p_wk >= 100:
+                    print(f"      - Weekly Window (7d)     : 0% Used (100% Remaining) | Ready")
+                else:
+                    print(f"      - Weekly Window (7d)     : {used_wk:>2}% Used ({p_wk:>2}% Remaining)  | {w_reset_str}{w_warn}")
+
                 if show_model_only:
                     print(f"      - Claude/GPT Limit       : {q['claude_5h_pct']}% (5h) / {q['claude_weekly_pct']}% (weekly)")
             else:
