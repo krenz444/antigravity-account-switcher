@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """gui_app.py - Windows Desktop App for Antigravity Multi-Account Switching & Real-Time Quota Monitor.
 
 Features:
@@ -14,7 +13,6 @@ Features:
 
 import concurrent.futures
 import ctypes
-from ctypes import wintypes
 import datetime as dt
 import json
 import os
@@ -23,13 +21,47 @@ import sys
 import threading
 import time
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox
 
-# Enable Per-Monitor High-DPI Awareness
-try:
-    ctypes.windll.shcore.SetProcessDpiAwareness(1)
-except Exception:
-    pass
+
+# Enable Per-Monitor High-DPI Awareness with multi-tier fallback
+def enable_high_dpi_awareness():
+    """Enables Per-Monitor v2 High-DPI awareness with graceful multi-tier fallbacks."""
+    user32 = getattr(ctypes.windll, 'user32', None)
+    if user32 and hasattr(user32, 'SetProcessDpiAwarenessContext'):
+        try:
+            DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4
+            if user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)):
+                return True
+        except Exception:
+            pass
+
+    shcore = getattr(ctypes.windll, 'shcore', None)
+    if shcore and hasattr(shcore, 'SetProcessDpiAwareness'):
+        try:
+            PROCESS_PER_MONITOR_DPI_AWARE = 2
+            if shcore.SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE) == 0:
+                return True
+        except Exception:
+            pass
+
+    if shcore and hasattr(shcore, 'SetProcessDpiAwareness'):
+        try:
+            PROCESS_SYSTEM_DPI_AWARE = 1
+            if shcore.SetProcessDpiAwareness(PROCESS_SYSTEM_DPI_AWARE) == 0:
+                return True
+        except Exception:
+            pass
+
+    if user32 and hasattr(user32, 'SetProcessDPIAware'):
+        try:
+            return bool(user32.SetProcessDPIAware())
+        except Exception:
+            pass
+
+    return False
+
+enable_high_dpi_awareness()
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
@@ -1105,7 +1137,61 @@ class AccountSwitchboardApp:
                 continue
 
 
-            if not q or q.get("5h_pct") is None:
+            if not q:
+                refs["lbl_5h_val"].config(text="Query Failed", fg=COLOR_WARN)
+                refs["lbl_wk_val"].config(text="Query Failed", fg=COLOR_WARN)
+                refs["timer_lbl"].config(text="● Could not query quota", fg=COLOR_WARN)
+                if refs.get("claude_lbl"):
+                    refs["claude_lbl"].config(text="Claude/GPT: --", fg=TEXT_DIM)
+                refs["rem_5h_pct"] = None
+                refs["used_5h_pct"] = None
+                refs["rem_wk_pct"] = None
+                refs["used_wk_pct"] = None
+                refs["last_5h_pct"] = None
+                refs["last_wk_pct"] = None
+                refs["exp_5h_ts"] = None
+                refs["weekly_reset_str"] = None
+                self.render_canvas_bar(refs["canvas_5h"], 0, COLOR_WARN)
+                self.render_canvas_bar(refs["canvas_wk"], 0, COLOR_WARN)
+                continue
+
+            if q.get("offline"):
+                refs["lbl_5h_val"].config(text="Offline", fg=COLOR_WARN)
+                refs["lbl_wk_val"].config(text="Offline", fg=COLOR_WARN)
+                refs["timer_lbl"].config(text="● Network offline / Unreachable", fg=COLOR_WARN)
+                if refs.get("claude_lbl"):
+                    refs["claude_lbl"].config(text="Claude/GPT: --", fg=TEXT_DIM)
+                refs["rem_5h_pct"] = None
+                refs["used_5h_pct"] = None
+                refs["rem_wk_pct"] = None
+                refs["used_wk_pct"] = None
+                refs["last_5h_pct"] = None
+                refs["last_wk_pct"] = None
+                refs["exp_5h_ts"] = None
+                refs["weekly_reset_str"] = None
+                self.render_canvas_bar(refs["canvas_5h"], 0, COLOR_WARN)
+                self.render_canvas_bar(refs["canvas_wk"], 0, COLOR_WARN)
+                continue
+
+            if q.get("rate_limited"):
+                refs["lbl_5h_val"].config(text="Rate Limited", fg=COLOR_DANGER)
+                refs["lbl_wk_val"].config(text="Rate Limited", fg=COLOR_DANGER)
+                refs["timer_lbl"].config(text="● 429 Too Many Requests (Backing off)", fg=COLOR_DANGER)
+                if refs.get("claude_lbl"):
+                    refs["claude_lbl"].config(text="Claude/GPT: --", fg=TEXT_DIM)
+                refs["rem_5h_pct"] = None
+                refs["used_5h_pct"] = None
+                refs["rem_wk_pct"] = None
+                refs["used_wk_pct"] = None
+                refs["last_5h_pct"] = None
+                refs["last_wk_pct"] = None
+                refs["exp_5h_ts"] = None
+                refs["weekly_reset_str"] = None
+                self.render_canvas_bar(refs["canvas_5h"], 0, COLOR_DANGER)
+                self.render_canvas_bar(refs["canvas_wk"], 0, COLOR_DANGER)
+                continue
+
+            if q.get("auth_required") or q.get("5h_pct") is None:
                 refs["lbl_5h_val"].config(text="Connect Required", fg=COLOR_WARN)
                 refs["lbl_wk_val"].config(text="Connect Required", fg=COLOR_WARN)
                 refs["timer_lbl"].config(text="● Click Switch to connect with Google OAuth", fg=COLOR_WARN)
@@ -1422,7 +1508,7 @@ class AccountSwitchboardApp:
         self.set_buttons_enabled(False)
 
         def run_auth():
-            ok = router.oauth_authorize_interactive(next_name)
+            ok = router.authenticate_profile(next_name)
             def finish():
                 if not self.is_destroyed:
                     self.set_buttons_enabled(True)

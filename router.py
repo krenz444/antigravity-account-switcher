@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """account_router.py - Multi-Account Quota Router & Switcher for ai-os.
 
 Manages switching and automatic failover between:
@@ -10,37 +9,135 @@ Manages switching and automatic failover between:
 import argparse
 import base64
 import concurrent.futures
+import copy
 import ctypes
-from ctypes import wintypes
 import datetime as dt
 import glob
 import json
 import os
 import re
-
+import secrets
 import shutil
+import socket
 import ssl
 import subprocess
 import sys
+import threading
 import time
 import urllib.parse
 import urllib.request
+from ctypes import wintypes
 
 try:
     import psutil
 except ImportError:
     psutil = None
 
+# Set default socket timeout as a defensive baseline
+socket.setdefaulttimeout(10.0)
+
 HOME = os.path.expanduser("~")
-GEMINI_DIR = os.path.join(HOME, ".gemini")
+APPDATA = os.environ.get("APPDATA") or os.path.join(HOME, "AppData", "Roaming")
+LOCALAPPDATA = os.environ.get("LOCALAPPDATA") or os.path.join(HOME, "AppData", "Local")
+PROGRAMFILES = os.environ.get("ProgramFiles") or r"C:\Program Files"
+PROGRAMFILES_X86 = os.environ.get("ProgramFiles(x86)") or r"C:\Program Files (x86)"
+
+GEMINI_DIR = os.environ.get("GEMINI_DIR") or os.path.join(HOME, ".gemini")
 PROFILES_DIR = os.path.join(GEMINI_DIR, "profiles")
 ACTIVE_OAUTH = os.path.join(GEMINI_DIR, "oauth_creds.json")
 ACTIVE_ACCOUNTS = os.path.join(GEMINI_DIR, "google_accounts.json")
-APP_STORAGE = os.path.join(os.environ.get("APPDATA", ""), "Antigravity", "app_storage.json")
+APP_STORAGE = os.environ.get("ANTIGRAVITY_APP_STORAGE") or os.path.join(APPDATA, "Antigravity", "app_storage.json")
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = os.path.join(SCRIPT_DIR, ".usage_state.json")
 CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.json")
+
+# ---------------------------------------------------------------------------
+# Strict Profile Name Sanitization & Path Traversal Prevention
+# ---------------------------------------------------------------------------
+
+PROFILE_NAME_REGEX = re.compile(r'^[a-zA-Z0-9_-]+$')
+WINDOWS_RESERVED_NAMES = {
+    "con", "prn", "aux", "nul",
+    "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
+    "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9"
+}
+
+
+def is_valid_profile_name(name):
+    """Returns True if the profile name strictly matches ^[a-zA-Z0-9_-]+$ and is not a reserved name."""
+    if not name or not isinstance(name, str):
+        return False
+    clean = name.strip()
+    if not (1 <= len(clean) <= 64):
+        return False
+    if clean.lower() in WINDOWS_RESERVED_NAMES:
+        return False
+    return bool(PROFILE_NAME_REGEX.match(clean))
+
+
+def sanitize_profile_name(name):
+    """Strictly sanitizes profile name to match ^[a-zA-Z0-9_-]+$ and prevent path traversal."""
+    if not name:
+        return f"google_{int(time.time())}"
+    raw = str(name).strip()
+    clean = re.sub(r'[^a-zA-Z0-9_-]', '_', raw)
+    clean = clean.strip('_')[:64]
+    if not clean or clean.lower() in WINDOWS_RESERVED_NAMES:
+        return f"google_{int(time.time())}"
+    return clean
+
+
+def validate_profile_path(profile_name):
+    """Validates that the profile directory resides safely within PROFILES_DIR."""
+    safe_name = sanitize_profile_name(profile_name)
+    base_dir = os.path.abspath(PROFILES_DIR)
+    target_dir = os.path.abspath(os.path.join(base_dir, safe_name))
+    if not (target_dir.startswith(base_dir + os.sep) or target_dir == base_dir):
+        raise ValueError(f"Path traversal detected in profile name: {profile_name!r}")
+    return safe_name, target_dir
+
+
+# ---------------------------------------------------------------------------
+# Zero Token/Credential Leakage Utilities
+# ---------------------------------------------------------------------------
+
+def mask_sensitive_arguments(cmd_args):
+    """Sanitizes CLI command arguments to prevent token or credential leakage in logs."""
+    if not cmd_args:
+        return []
+    sensitive_keys = {
+        "--csrf_token", "--token", "--access_token", "--api_key", "--password",
+        "--client_secret", "--key", "-token", "--secret"
+    }
+    masked = []
+    skip_next = False
+    for arg in cmd_args:
+        if skip_next:
+            masked.append("********")
+            skip_next = False
+            continue
+
+        found_flag = False
+        for sk in sensitive_keys:
+            if arg.startswith(f"{sk}="):
+                masked.append(f"{sk}=********")
+                found_flag = True
+                break
+        if found_flag:
+            continue
+
+        if arg.lower() in sensitive_keys:
+            masked.append(arg)
+            skip_next = True
+            continue
+
+        if "bearer " in arg.lower():
+            masked.append(re.sub(r'(bearer\s+)[A-Za-z0-9_\-\.]+', r'\1********', arg, flags=re.IGNORECASE))
+            continue
+
+        masked.append(arg)
+    return masked
 
 
 # ---------------------------------------------------------------------------
@@ -75,7 +172,9 @@ def extract_email_from_jwt(id_tok):
             payload = parts[1]
             payload += '=' * (-len(payload) % 4)
             info = json.loads(base64.urlsafe_b64decode(payload).decode('utf-8'))
-            return info.get('email')
+            email = info.get('email')
+            if email and isinstance(email, str):
+                return email.strip().lower()
     except Exception:
         pass
     return None
@@ -86,23 +185,29 @@ def read_windows_credential(target="gemini:antigravity"):
         return None, None
     cred_ptr = ctypes.POINTER(CREDENTIAL)()
     # CRED_TYPE_GENERIC = 1
-    if advapi32.CredReadW(target, 1, 0, ctypes.byref(cred_ptr)):
+    if not advapi32.CredReadW(target, 1, 0, ctypes.byref(cred_ptr)):
+        return None, None
+    try:
         c = cred_ptr.contents
         raw_blob = ctypes.string_at(c.CredentialBlob, c.CredentialBlobSize)
+    finally:
         advapi32.CredFree(cred_ptr)
-        email = None
-        try:
-            data = json.loads(raw_blob.decode('utf-8'))
-            email = extract_email_from_jwt(data.get('id_token', ''))
-        except Exception:
-            pass
-        return raw_blob, email
-    return None, None
+
+    email = None
+    try:
+        data = json.loads(raw_blob.decode('utf-8'))
+        id_tok = data.get('id_token') or data.get('token', {}).get('id_token', '')
+        email = extract_email_from_jwt(id_tok)
+    except Exception:
+        pass
+    return raw_blob, email
 
 
 def write_windows_credential(raw_blob, target="gemini:antigravity", user="antigravity"):
-    if not advapi32:
+    if not advapi32 or not raw_blob:
         return False
+    if isinstance(raw_blob, str):
+        raw_blob = raw_blob.encode('utf-8')
     cred = CREDENTIAL()
     cred.Flags = 0
     cred.Type = 1  # CRED_TYPE_GENERIC
@@ -115,51 +220,118 @@ def write_windows_credential(raw_blob, target="gemini:antigravity", user="antigr
     cred.Attributes = None
     cred.TargetAlias = None
     cred.UserName = user
-    return bool(advapi32.CredWriteW(ctypes.byref(cred), 0))
+    try:
+        return bool(advapi32.CredWriteW(ctypes.byref(cred), 0))
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------
-# File & State Management (Resilient & Atomic)
+# File & State Management (Resilient, Thread-Safe & Atomic)
 # ---------------------------------------------------------------------------
+
+_FILE_LOCK = threading.RLock()
+
 
 def load_json(path, default=None):
+    """Safely loads JSON. If file is corrupted, creates a backup and returns default."""
+    default_val = default if default is not None else {}
     if not os.path.exists(path):
-        return default if default is not None else {}
+        return copy.deepcopy(default_val)
     try:
         with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            content = f.read().strip()
+            if not content:
+                return copy.deepcopy(default_val)
+            return json.loads(content)
     except Exception:
-        return default if default is not None else {}
+        # File exists but is corrupted (syntax error, truncated write)
+        try:
+            bak_path = f"{path}.corrupted.{int(time.time())}.bak"
+            shutil.copy2(path, bak_path)
+        except Exception:
+            pass
+        return copy.deepcopy(default_val)
 
 
-def save_json(path, data):
-    """Atomically writes JSON to disk via temp file to avoid file corruption on interruption."""
+def save_json(path, data, max_retries=8, initial_delay=0.05):
+    """Atomically and thread-safely writes JSON to disk via unique temp file.
+    Retries with exponential backoff on Windows ERROR_SHARING_VIOLATION (WinError 32).
+    """
     abs_path = os.path.abspath(path)
     os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-    tmp_path = abs_path + f".tmp.{os.getpid()}"
-    try:
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-        os.replace(tmp_path, abs_path)
-    except Exception:
-        # Fallback to direct write if os.replace encounters OS lock
-        with open(abs_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+    tmp_path = f"{abs_path}.tmp.{os.getpid()}_{threading.get_ident()}_{time.time_ns()}"
+
+    with _FILE_LOCK:
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+                f.flush()
+                try:
+                    os.fsync(f.fileno())
+                except OSError:
+                    pass
+        except Exception:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+            return False
+
+        delay = initial_delay
+        for attempt in range(max_retries):
+            try:
+                os.replace(tmp_path, abs_path)
+                return True
+            except (PermissionError, OSError) as e:
+                is_sharing_violation = getattr(e, "winerror", None) in (32, 33, 5) or "used by another process" in str(e).lower()
+                if is_sharing_violation and attempt < max_retries - 1:
+                    time.sleep(delay)
+                    delay = min(delay * 2, 0.5)
+                    continue
+
+                kernel32 = getattr(ctypes.windll, 'kernel32', None)
+                if kernel32 and hasattr(kernel32, 'ReplaceFileW'):
+                    try:
+                        res = kernel32.ReplaceFileW(
+                            ctypes.c_wchar_p(abs_path),
+                            ctypes.c_wchar_p(tmp_path),
+                            None, 0, None, None
+                        )
+                        if res != 0:
+                            return True
+                    except Exception:
+                        pass
+
+                if os.path.exists(tmp_path):
+                    try:
+                        os.remove(tmp_path)
+                    except OSError:
+                        pass
+                return False
+
         if os.path.exists(tmp_path):
             try:
                 os.remove(tmp_path)
-            except Exception:
+            except OSError:
                 pass
+        return False
 
 
 def get_state():
-    return load_json(STATE_FILE, default={
+    default_state = {
         "active_google_profile": "google_1"
-    })
+    }
+    raw = load_json(STATE_FILE, default=default_state)
+    if not isinstance(raw, dict):
+        raw = copy.deepcopy(default_state)
+    if "active_google_profile" not in raw or not isinstance(raw["active_google_profile"], str):
+        raw["active_google_profile"] = "google_1"
+    return raw
 
 
 def save_state(state):
-    # Ensure cleaned state without deprecated keys
     cleaned = {k: v for k, v in state.items() if k not in ("cooldowns", "last_rotation")}
     save_json(STATE_FILE, cleaned)
 
@@ -186,23 +358,100 @@ def get_config():
             "loopback_oauth_port": 8085
         }
     }
-    cfg = load_json(CONFIG_FILE, default=default_config)
+    raw_cfg = load_json(CONFIG_FILE, default=default_config)
+    cfg = raw_cfg if isinstance(raw_cfg, dict) else copy.deepcopy(default_config)
     for k, v in default_config.items():
         if k not in cfg:
-            cfg[k] = v
-        elif isinstance(v, dict) and isinstance(cfg[k], dict):
-            for sub_k, sub_v in v.items():
-                if sub_k not in cfg[k]:
-                    cfg[k][sub_k] = sub_v
+            cfg[k] = copy.deepcopy(v)
+        elif isinstance(v, dict):
+            if not isinstance(cfg[k], dict):
+                cfg[k] = copy.deepcopy(v)
+            else:
+                for sub_k, sub_v in v.items():
+                    if sub_k not in cfg[k]:
+                        cfg[k][sub_k] = copy.deepcopy(sub_v)
     return cfg
 
 
-def sanitize_profile_name(name):
-    """Sanitizes profile name to prevent path traversal and ensure safe filenames."""
-    clean = re.sub(r'[^a-zA-Z0-9_\-.]', '_', str(name).strip())
-    clean = clean.lstrip('.').strip()
-    return clean if clean else f"google_{int(time.time())}"
+# ---------------------------------------------------------------------------
+# Non-Blocking Shared File Reads (LevelDB Shared Access)
+# ---------------------------------------------------------------------------
 
+def read_shared_file(fpath, max_bytes=512 * 1024, tail_only=True):
+    """Reads a file with non-blocking shared access (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE).
+    Prevents lock contention with Claude Windows app and safely reads LevelDB files.
+    """
+    if not os.path.exists(fpath):
+        return b""
+
+    # 1. On Windows, use Win32 CreateFileW for non-blocking shared read
+    kernel32 = getattr(ctypes.windll, 'kernel32', None)
+    if kernel32:
+        GENERIC_READ = 0x80000000
+        FILE_SHARE_READ = 0x00000001
+        FILE_SHARE_WRITE = 0x00000002
+        FILE_SHARE_DELETE = 0x00000004
+        OPEN_EXISTING = 3
+        FILE_ATTRIBUTE_NORMAL = 0x80
+        INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+
+        handle = kernel32.CreateFileW(
+            ctypes.c_wchar_p(fpath),
+            GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            None,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            None
+        )
+
+        if handle != INVALID_HANDLE_VALUE and handle != 0:
+            try:
+                file_size = wintypes.LARGE_INTEGER()
+                if kernel32.GetFileSizeEx(handle, ctypes.byref(file_size)):
+                    total_size = file_size.value
+                else:
+                    total_size = os.path.getsize(fpath)
+
+                if total_size <= 0:
+                    return b""
+
+                read_size = min(total_size, max_bytes)
+                if tail_only and total_size > max_bytes:
+                    offset = wintypes.LARGE_INTEGER(total_size - read_size)
+                    FILE_BEGIN = 0
+                    kernel32.SetFilePointerEx(handle, offset, None, FILE_BEGIN)
+
+                buf = ctypes.create_string_buffer(read_size)
+                bytes_read = wintypes.DWORD()
+                if kernel32.ReadFile(handle, buf, read_size, ctypes.byref(bytes_read), None):
+                    return buf.raw[:bytes_read.value]
+            except Exception:
+                pass
+            finally:
+                kernel32.CloseHandle(handle)
+
+    # 2. Standard fallback
+    try:
+        with open(fpath, "rb") as f:
+            if tail_only:
+                try:
+                    f.seek(0, os.SEEK_END)
+                    sz = f.tell()
+                    if sz > max_bytes:
+                        f.seek(sz - max_bytes, os.SEEK_SET)
+                    else:
+                        f.seek(0, os.SEEK_SET)
+                except OSError:
+                    pass
+            return f.read(max_bytes)
+    except (PermissionError, OSError):
+        return b""
+
+
+# ---------------------------------------------------------------------------
+# Account Profiles & Identity Management
+# ---------------------------------------------------------------------------
 
 def get_active_email():
     # 1. Try Windows Credential Manager
@@ -225,7 +474,12 @@ def list_profiles():
     os.makedirs(PROFILES_DIR, exist_ok=True)
     entries = []
     for item in sorted(os.listdir(PROFILES_DIR)):
-        pdir = os.path.join(PROFILES_DIR, item)
+        if not is_valid_profile_name(item):
+            continue
+        try:
+            safe_name, pdir = validate_profile_path(item)
+        except ValueError:
+            continue
         if os.path.isdir(pdir):
             meta = load_json(os.path.join(pdir, "profile_meta.json"), {})
             email = meta.get("email")
@@ -238,13 +492,12 @@ def list_profiles():
                 cred_file = os.path.join(pdir, "credential_blob.bin")
                 if os.path.exists(cred_file):
                     try:
-                        with open(cred_file, "r", encoding="utf-8") as f:
-                            cdata = json.load(f)
+                        cdata = load_json(cred_file, {})
                         id_tok = cdata.get("id_token") or cdata.get("token", {}).get("id_token")
                         email = extract_email_from_jwt(id_tok)
                     except Exception:
                         pass
-            entries.append({"name": item, "email": email or "Unknown", "alias": alias, "path": pdir})
+            entries.append({"name": safe_name, "email": email or "Unknown", "alias": alias, "path": pdir})
 
     # Auto-onboard first account if profiles directory is empty and active credentials exist
     if not entries and os.path.exists(ACTIVE_OAUTH):
@@ -260,39 +513,47 @@ def list_profiles():
 
 def set_profile_alias(name, alias):
     """Sets a friendly nickname/alias for a profile."""
-    if str(name).isdigit() and not os.path.exists(os.path.join(PROFILES_DIR, str(name))):
+    if str(name).isdigit():
         candidate = f"google_{name}"
-        if os.path.exists(os.path.join(PROFILES_DIR, candidate)):
-            name = candidate
-    prof_dir = os.path.join(PROFILES_DIR, name)
+        try:
+            safe_c, c_dir = validate_profile_path(candidate)
+            if os.path.exists(c_dir):
+                name = safe_c
+        except ValueError:
+            pass
+
+    safe_name, prof_dir = validate_profile_path(name)
     if not os.path.exists(prof_dir):
-        print(f"[ERROR] Profile '{name}' does not exist.")
+        print(f"[ERROR] Profile '{safe_name}' does not exist.")
         return False
     meta_path = os.path.join(prof_dir, "profile_meta.json")
-    meta = load_json(meta_path, {"name": name})
-    meta["alias"] = alias
+    meta = load_json(meta_path, {"name": safe_name})
+    meta["alias"] = str(alias).strip()[:64]
     save_json(meta_path, meta)
-    print(f"[OK] Set alias '{alias}' for profile '{name}'")
+    print(f"[OK] Set alias '{alias}' for profile '{safe_name}'")
     return True
 
 
 def get_profile_email(name):
     """Retrieves the email associated with a profile name."""
-    prof_dir = os.path.join(PROFILES_DIR, name)
-    if os.path.exists(prof_dir):
-        meta = load_json(os.path.join(prof_dir, "profile_meta.json"), {})
-        email = meta.get("email")
-        if email:
-            return email
-        acc_file = os.path.join(prof_dir, "google_accounts.json")
-        if os.path.exists(acc_file):
-            return load_json(acc_file, {}).get("active")
+    try:
+        safe_name, prof_dir = validate_profile_path(name)
+        if os.path.exists(prof_dir):
+            meta = load_json(os.path.join(prof_dir, "profile_meta.json"), {})
+            email = meta.get("email")
+            if email:
+                return email
+            acc_file = os.path.join(prof_dir, "google_accounts.json")
+            if os.path.exists(acc_file):
+                return load_json(acc_file, {}).get("active")
+    except Exception:
+        pass
     return "Unknown"
 
 
 def save_current_profile(name):
     """Snapshot the current active Google credentials into a profile."""
-    target_dir = os.path.join(PROFILES_DIR, name)
+    safe_name, target_dir = validate_profile_path(name)
     os.makedirs(target_dir, exist_ok=True)
 
     raw_blob, win_email = read_windows_credential()
@@ -301,21 +562,25 @@ def save_current_profile(name):
         app_user = load_json(APP_STORAGE, {}).get("jetski.onboarding.lastLoginUsername")
 
     email = win_email or app_user or get_active_email()
-
     saved_anything = False
 
     # 1. Save Windows Credential Blob
     if raw_blob:
-        with open(os.path.join(target_dir, "credential_blob.bin"), "wb") as f:
-            f.write(raw_blob)
-        saved_anything = True
+        try:
+            with open(os.path.join(target_dir, "credential_blob.bin"), "wb") as f:
+                f.write(raw_blob)
+            saved_anything = True
+        except Exception:
+            pass
 
     # 2. Save active files if available
     if os.path.exists(ACTIVE_OAUTH):
-        shutil.copy2(ACTIVE_OAUTH, os.path.join(target_dir, "oauth_creds.json"))
-        saved_anything = True
+        try:
+            shutil.copy2(ACTIVE_OAUTH, os.path.join(target_dir, "oauth_creds.json"))
+            saved_anything = True
+        except Exception:
+            pass
     if os.path.exists(ACTIVE_ACCOUNTS):
-        # Update active email in the profile accounts file if we know it
         acc_data = load_json(ACTIVE_ACCOUNTS, {"active": email, "old": []})
         acc_data["active"] = email
         save_json(os.path.join(target_dir, "google_accounts.json"), acc_data)
@@ -323,51 +588,62 @@ def save_current_profile(name):
 
     # 3. Save profile metadata
     save_json(os.path.join(target_dir, "profile_meta.json"), {
-        "name": name,
+        "name": safe_name,
         "email": email,
         "saved_at": dt.datetime.now().isoformat()
     })
 
     if not saved_anything:
         print("[ERROR] No active Google credentials found to save.")
-        return False
+        return False, "No active Google credentials found to save."
 
-    print(f"[OK] Saved current Google profile ({email}) as '{name}' in {target_dir}")
+    print(f"[OK] Saved current Google profile ({email}) as '{safe_name}' in {target_dir}")
     state = get_state()
-    state["active_google_profile"] = name
+    state["active_google_profile"] = safe_name
     save_state(state)
-    return True
+    CIRCUIT_BREAKER.reset(safe_name)
+    return True, f"Saved current Google profile as '{safe_name}'"
 
 
 def switch_google_profile(name):
     """Instantly swap active Google credentials to the requested account (by email or number)."""
     # 1. Support email or partial email resolution (e.g. "developer@gmail.com" or "developer")
     target_str = str(name).strip().lower()
+    resolved_name = None
     for p in list_profiles():
         p_email = (p.get("email") or "").lower()
         if p_email == target_str or (len(target_str) >= 4 and target_str in p_email):
-            name = p["name"]
+            resolved_name = p["name"]
             break
 
-    # 2. Support numeric aliases (e.g. "1" -> "google_1")
-    if str(name).isdigit() and not os.path.exists(os.path.join(PROFILES_DIR, str(name))):
-        candidate = f"google_{name}"
-        if os.path.exists(os.path.join(PROFILES_DIR, candidate)):
-            name = candidate
+    if not resolved_name:
+        # 2. Support numeric aliases (e.g. "1" -> "google_1")
+        if str(name).isdigit():
+            candidate = f"google_{name}"
+            try:
+                safe_cand, cand_dir = validate_profile_path(candidate)
+                if os.path.exists(cand_dir):
+                    resolved_name = safe_cand
+            except ValueError:
+                pass
 
-    # Case-insensitive resolution
-    target_dir = os.path.join(PROFILES_DIR, name)
+    if not resolved_name:
+        resolved_name = sanitize_profile_name(name)
+
+    safe_name, target_dir = validate_profile_path(resolved_name)
     if not os.path.exists(target_dir):
+        # Case-insensitive resolution within PROFILES_DIR
         for item in os.listdir(PROFILES_DIR):
-            if item.lower() == str(name).lower():
-                name = item
-                target_dir = os.path.join(PROFILES_DIR, name)
-                break
+            if item.lower() == str(name).lower() or item.lower() == safe_name.lower():
+                try:
+                    safe_name, target_dir = validate_profile_path(item)
+                    break
+                except ValueError:
+                    pass
 
     if not os.path.exists(target_dir):
         print(f"[ERROR] Account '{name}' does not exist in {PROFILES_DIR}")
         return False
-
 
     meta = load_json(os.path.join(target_dir, "profile_meta.json"), {})
     email = meta.get("email")
@@ -375,11 +651,13 @@ def switch_google_profile(name):
     # 1. Restore Windows Credential Manager blob
     blob_file = os.path.join(target_dir, "credential_blob.bin")
     if os.path.exists(blob_file):
-        with open(blob_file, "rb") as f:
-            raw_blob = f.read()
-        write_windows_credential(raw_blob)
+        try:
+            with open(blob_file, "rb") as f:
+                raw_blob = f.read()
+            write_windows_credential(raw_blob)
+        except Exception:
+            pass
     else:
-        # Construct blob from oauth_creds.json if available
         oauth_file = os.path.join(target_dir, "oauth_creds.json")
         if os.path.exists(oauth_file):
             creds = load_json(oauth_file)
@@ -400,9 +678,15 @@ def switch_google_profile(name):
     oauth_src = os.path.join(target_dir, "oauth_creds.json")
     acc_src = os.path.join(target_dir, "google_accounts.json")
     if os.path.exists(oauth_src):
-        shutil.copy2(oauth_src, ACTIVE_OAUTH)
+        try:
+            shutil.copy2(oauth_src, ACTIVE_OAUTH)
+        except Exception:
+            pass
     if os.path.exists(acc_src):
-        shutil.copy2(acc_src, ACTIVE_ACCOUNTS)
+        try:
+            shutil.copy2(acc_src, ACTIVE_ACCOUNTS)
+        except Exception:
+            pass
 
     # 3. Sync with Antigravity App 2.23.0 app_storage.json
     if os.path.exists(APP_STORAGE) and email:
@@ -413,23 +697,26 @@ def switch_google_profile(name):
         except Exception:
             pass
 
-    print(f"[OK] Switched active Google account to {email or name}")
+    print(f"[OK] Switched active Google account to {email or safe_name}")
     state = get_state()
-    state["active_google_profile"] = name
+    state["active_google_profile"] = safe_name
     state["last_rotation"] = dt.datetime.now().isoformat()
     save_state(state)
+    CIRCUIT_BREAKER.reset(safe_name)
     return True
 
 
+# ---------------------------------------------------------------------------
+# App & Desktop Process Detection
+# ---------------------------------------------------------------------------
+
 def find_antigravity_exe():
     """Finds the Antigravity desktop executable across user config, running processes, or standard install paths."""
-    # 1. Check user config file
     cfg = get_config()
     cfg_path = cfg.get("antigravity_exe_path")
     if cfg_path and os.path.isfile(cfg_path):
         return os.path.abspath(cfg_path)
 
-    # 2. Check running process path if Antigravity is active
     if psutil:
         try:
             for p in psutil.process_iter(['name', 'exe']):
@@ -443,18 +730,16 @@ def find_antigravity_exe():
         except Exception:
             pass
 
-    # 3. Check standard Windows user and machine install paths
     candidates = [
-        os.path.expandvars(r"%LOCALAPPDATA%\Programs\antigravity\Antigravity.exe"),
-        os.path.expandvars(r"%PROGRAMFILES%\Antigravity\Antigravity.exe"),
-        os.path.expandvars(r"%PROGRAMFILES(X86)%\Antigravity\Antigravity.exe"),
-        os.path.expandvars(r"%APPDATA%\Local\Programs\antigravity\Antigravity.exe"),
+        os.path.join(LOCALAPPDATA, "Programs", "antigravity", "Antigravity.exe"),
+        os.path.join(PROGRAMFILES, "Antigravity", "Antigravity.exe"),
+        os.path.join(PROGRAMFILES_X86, "Antigravity", "Antigravity.exe"),
+        os.path.join(APPDATA, "Local", "Programs", "antigravity", "Antigravity.exe"),
     ]
     for c in candidates:
         if c and os.path.isfile(c):
             return os.path.abspath(c)
 
-    # 4. Check system PATH
     which_path = shutil.which("antigravity") or shutil.which("antigravity.exe")
     if which_path and os.path.isfile(which_path):
         return os.path.abspath(which_path)
@@ -470,10 +755,8 @@ def find_claude_paths():
     if custom_pkg and os.path.isdir(os.path.expanduser(os.path.expandvars(custom_pkg))):
         return os.path.abspath(os.path.expanduser(os.path.expandvars(custom_pkg)))
 
-    # 1. Search Windows MSIX Packages (wildcard for any Claude package build)
-    local_appdata = os.environ.get("LOCALAPPDATA", "")
-    if local_appdata:
-        pkg_base = os.path.join(local_appdata, "Packages")
+    if LOCALAPPDATA:
+        pkg_base = os.path.join(LOCALAPPDATA, "Packages")
         if os.path.isdir(pkg_base):
             try:
                 for entry in sorted(os.listdir(pkg_base)):
@@ -484,10 +767,9 @@ def find_claude_paths():
             except Exception:
                 pass
 
-    # 2. Check standard non-packaged roaming/local electron directories
     candidates = [
-        os.path.expandvars(r"%APPDATA%\Claude"),
-        os.path.expandvars(r"%LOCALAPPDATA%\Claude"),
+        os.path.join(APPDATA, "Claude"),
+        os.path.join(LOCALAPPDATA, "Claude"),
     ]
     for c in candidates:
         if c and os.path.isdir(c):
@@ -498,12 +780,11 @@ def find_claude_paths():
 
 def launch_claude_desktop():
     """Launches Claude for Windows across package, standard EXE, or shell protocols."""
-    # 1. Check if claude is in PATH or standard executable
     candidates = [
         shutil.which("claude"),
-        os.path.expandvars(r"%LOCALAPPDATA%\Programs\Claude\Claude.exe"),
-        os.path.expandvars(r"%PROGRAMFILES%\Claude\Claude.exe"),
-        os.path.expandvars(r"%PROGRAMFILES(X86)%\Claude\Claude.exe"),
+        os.path.join(LOCALAPPDATA, "Programs", "Claude", "Claude.exe"),
+        os.path.join(PROGRAMFILES, "Claude", "Claude.exe"),
+        os.path.join(PROGRAMFILES_X86, "Claude", "Claude.exe"),
     ]
     for c in candidates:
         if c and os.path.isfile(c):
@@ -512,10 +793,8 @@ def launch_claude_desktop():
             subprocess.Popen([c], creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
             return True
 
-    # 2. Query WindowsApps package family
     try:
-        local_appdata = os.environ.get("LOCALAPPDATA", "")
-        pkg_base = os.path.join(local_appdata, "Packages")
+        pkg_base = os.path.join(LOCALAPPDATA, "Packages")
         pkg_name = None
         if os.path.isdir(pkg_base):
             for entry in sorted(os.listdir(pkg_base)):
@@ -529,7 +808,6 @@ def launch_claude_desktop():
     except Exception:
         pass
 
-    # 3. Fallback to protocol
     try:
         subprocess.Popen(["cmd", "/c", "start", "claude:"], shell=False)
         return True
@@ -546,7 +824,7 @@ def restart_antigravity_app():
 
     state = get_state()
     staged_name = state.get("active_google_profile", "google_1")
-    prof_dir = os.path.join(PROFILES_DIR, staged_name)
+    safe_staged, prof_dir = validate_profile_path(staged_name)
     meta = load_json(os.path.join(prof_dir, "profile_meta.json"), {})
     email = meta.get("email")
     if not email:
@@ -564,8 +842,7 @@ def restart_antigravity_app():
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
     else:
-        cmd_kill = 'powershell -NoProfile -Command "Stop-Process -Name Antigravity, language_server -Force -ErrorAction SilentlyContinue"'
-        subprocess.run(cmd_kill, shell=True)
+        subprocess.run(["powershell", "-NoProfile", "-Command", "Stop-Process -Name Antigravity, language_server -Force -ErrorAction SilentlyContinue"])
 
     # 2. Wait until processes have fully released locks and sockets (up to 2.5s)
     t0 = time.time()
@@ -581,9 +858,10 @@ def restart_antigravity_app():
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
         else:
-            check_cmd = 'powershell -NoProfile -Command "Get-Process -Name Antigravity, language_server -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"'
             try:
-                out = subprocess.check_output(check_cmd, shell=True).decode().strip()
+                out = subprocess.check_output(
+                    ["powershell", "-NoProfile", "-Command", "Get-Process -Name Antigravity, language_server -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"]
+                ).decode().strip()
                 if out:
                     alive = True
             except Exception:
@@ -615,20 +893,21 @@ def restart_antigravity_app():
 
 
 def is_in_cooldown(profile_name):
-    """Cooldown system removed per user request."""
     return False
 
 
 def mark_cooldown(profile_name, minutes=None):
-    """Cooldown system removed per user request."""
     pass
 
 
 def rotate_google():
-    """Auto-rotate feature removed per user request."""
     print("[INFO] Auto-rotate has been removed. Switch accounts manually with 'ai-switch switch <name>'.")
     return False
 
+
+# ---------------------------------------------------------------------------
+# Quota Data Parsing & Formatting
+# ---------------------------------------------------------------------------
 
 def parse_quota_data(data):
     """Parses Gemini and Claude quota buckets from quota summary JSON."""
@@ -674,7 +953,6 @@ def parse_quota_data(data):
 
 
 def format_weekly_reset(iso_or_desc_str):
-    """Formats an ISO reset timestamp into a friendly 'Resets Sat 5:06 PM' string."""
     if not iso_or_desc_str:
         return "Resets Mon 7:00 PM"
     if str(iso_or_desc_str).startswith("Resets "):
@@ -689,7 +967,6 @@ def format_weekly_reset(iso_or_desc_str):
 
 
 def format_session_reset(iso_str, pct_remaining=None):
-    """Formats session reset time into 'Resets in 2 hr 38 min' or 'Ready (Window starts on first prompt)'."""
     if pct_remaining is not None and pct_remaining >= 100:
         return "Ready (Window starts on first prompt)"
     if not iso_str:
@@ -710,7 +987,6 @@ def format_session_reset(iso_str, pct_remaining=None):
 
 
 # Public Antigravity Desktop Client OAuth Credentials (RFC 8252 Installed Application Flow)
-# Encoded via byte transform to prevent false-positive push protection scanner alerts
 def _decode_cred(data: bytes, key: int = 0x5A) -> str:
     return bytes(b ^ key for b in data).decode('utf-8')
 
@@ -734,7 +1010,6 @@ def get_language_server_connection(max_age=8.0):
     port = None
     csrf = None
 
-    # Fast-path: use native psutil (18ms discovery)
     if psutil:
         try:
             for p in psutil.process_iter(['name', 'cmdline']):
@@ -754,11 +1029,10 @@ def get_language_server_connection(max_age=8.0):
         except Exception:
             pass
 
-    # Fallback to PowerShell if psutil is unavailable or couldn't query sockets
     if not port or not csrf:
         try:
-            cmd = 'powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\\"Name = \'language_server.exe\'\\\" | Select-Object ProcessId, CommandLine | ConvertTo-Json"'
-            raw = subprocess.check_output(cmd, shell=True).decode('utf-8', errors='ignore').strip()
+            cmd = ["powershell", "-NoProfile", "-Command", "Get-CimInstance Win32_Process -Filter \"Name = 'language_server.exe'\" | Select-Object ProcessId, CommandLine | ConvertTo-Json"]
+            raw = subprocess.check_output(cmd).decode('utf-8', errors='ignore').strip()
             if raw:
                 data = json.loads(raw)
                 if isinstance(data, list):
@@ -768,8 +1042,8 @@ def get_language_server_connection(max_age=8.0):
                 m_csrf = re.search(r'--csrf_token\s+([a-f0-9-]+)', cmdline)
                 if m_csrf:
                     csrf = m_csrf.group(1)
-                    net_cmd = f'powershell -NoProfile -Command "Get-NetTCPConnection -OwningProcess {pid} -State Listen | Select-Object -ExpandProperty LocalPort"'
-                    ports = [int(p) for p in subprocess.check_output(net_cmd, shell=True).decode().splitlines() if p.strip().isdigit()]
+                    net_cmd = ["powershell", "-NoProfile", "-Command", f"Get-NetTCPConnection -OwningProcess {pid} -State Listen | Select-Object -ExpandProperty LocalPort"]
+                    ports = [int(p) for p in subprocess.check_output(net_cmd).decode().splitlines() if p.strip().isdigit()]
                     if ports:
                         port = min(ports)
         except Exception:
@@ -780,7 +1054,6 @@ def get_language_server_connection(max_age=8.0):
         _LS_INFO_CACHE["csrf"] = csrf
         _LS_INFO_CACHE["time"] = now
 
-        # Retrieve live email in this single discovery step
         try:
             ctx = ssl.create_default_context()
             ctx.check_hostname = False
@@ -801,20 +1074,91 @@ def get_language_server_connection(max_age=8.0):
 
 
 def get_live_antigravity_email():
-    """Queries running language server for the actively authenticated user email."""
     conn = get_language_server_connection()
     return conn.get("email")
 
 
+# ---------------------------------------------------------------------------
+# Circuit Breaker & Rate-Limit Backoff Tracker
+# ---------------------------------------------------------------------------
+
+class CircuitBreaker:
+    """Circuit breaker and exponential backoff tracker for 401 refresh loops and 429 rate limits."""
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._states = {}
+
+    def _get_entry(self, key):
+        if key not in self._states:
+            self._states[key] = {
+                "consecutive_401": 0,
+                "circuit_open_until": 0.0,
+                "backoff_sec": 15.0,
+                "is_invalid": False,
+                "last_error": None
+            }
+        return self._states[key]
+
+    def should_allow_request(self, key):
+        with self._lock:
+            entry = self._get_entry(key)
+            if entry["is_invalid"]:
+                return False, "auth_revoked"
+            now = time.time()
+            if now < entry["circuit_open_until"]:
+                wait_s = max(1, int(entry["circuit_open_until"] - now))
+                return False, f"rate_limited_backoff_{wait_s}s"
+            return True, "ok"
+
+    def record_429(self, key):
+        with self._lock:
+            entry = self._get_entry(key)
+            entry["circuit_open_until"] = time.time() + entry["backoff_sec"]
+            entry["last_error"] = "429 Rate Limit"
+            entry["backoff_sec"] = min(entry["backoff_sec"] * 2.0, 300.0)
+
+    def record_401(self, key):
+        with self._lock:
+            entry = self._get_entry(key)
+            entry["consecutive_401"] += 1
+            if entry["consecutive_401"] >= 3:
+                entry["is_invalid"] = True
+                entry["last_error"] = "401 Authentication Invalid/Revoked"
+            else:
+                entry["circuit_open_until"] = time.time() + 10.0
+
+    def record_success(self, key):
+        with self._lock:
+            entry = self._get_entry(key)
+            entry["consecutive_401"] = 0
+            entry["circuit_open_until"] = 0.0
+            entry["backoff_sec"] = 15.0
+            entry["is_invalid"] = False
+            entry["last_error"] = None
+
+    def reset(self, key=None):
+        with self._lock:
+            if key:
+                self._states.pop(key, None)
+            else:
+                self._states.clear()
+
+
+CIRCUIT_BREAKER = CircuitBreaker()
+
+
+# ---------------------------------------------------------------------------
+# OAuth & Quota Querying
+# ---------------------------------------------------------------------------
+
 def refresh_profile_token(profile_name):
     """Refreshes access token for a profile using Antigravity OAuth client credentials."""
-    prof_dir = os.path.join(PROFILES_DIR, profile_name)
+    safe_name, prof_dir = validate_profile_path(profile_name)
     cred_file = os.path.join(prof_dir, "credential_blob.bin")
     if not os.path.exists(cred_file):
         return None
     try:
-        with open(cred_file, "r", encoding="utf-8") as f:
-            cred_data = json.load(f)
+        cred_data = load_json(cred_file, {})
         refresh_token = cred_data.get("token", {}).get("refresh_token")
         if not refresh_token:
             return None
@@ -826,7 +1170,7 @@ def refresh_profile_token(profile_name):
         }
         data = urllib.parse.urlencode(params).encode("utf-8")
         req = urllib.request.Request("https://oauth2.googleapis.com/token", data=data)
-        res = urllib.request.urlopen(req, timeout=5)
+        res = urllib.request.urlopen(req, timeout=5.0)
         ans = json.loads(res.read().decode("utf-8"))
         new_token = ans.get("access_token")
         if new_token:
@@ -834,10 +1178,9 @@ def refresh_profile_token(profile_name):
             if ans.get("refresh_token"):
                 cred_data["token"]["refresh_token"] = ans["refresh_token"]
             if ans.get("expires_in"):
-                exp_dt = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=ans["expires_in"])
+                exp_dt = dt.datetime.now(dt.UTC) + dt.timedelta(seconds=ans["expires_in"])
                 cred_data["token"]["expiry"] = exp_dt.isoformat()
-            with open(cred_file, "w", encoding="utf-8") as f:
-                json.dump(cred_data, f, indent=2)
+            save_json(cred_file, cred_data)
             return new_token
     except Exception:
         pass
@@ -845,39 +1188,59 @@ def refresh_profile_token(profile_name):
 
 
 def authenticate_profile(profile_name):
-    """Performs 1-click Google OAuth 2.0 authorization for a profile using Antigravity client credentials."""
+    """Performs 1-click Google OAuth 2.0 authorization for a profile with CSRF state verification."""
     import http.server
-    import socket
-    import urllib.parse
-    import urllib.request
     import webbrowser
 
     # Support numeric aliases (e.g. "1" -> "google_1")
-    if str(profile_name).isdigit() and not os.path.exists(os.path.join(PROFILES_DIR, str(profile_name))):
+    if str(profile_name).isdigit():
         candidate = f"google_{profile_name}"
-        if os.path.exists(os.path.join(PROFILES_DIR, candidate)):
-            profile_name = candidate
+        try:
+            safe_c, c_dir = validate_profile_path(candidate)
+            if os.path.exists(c_dir):
+                profile_name = safe_c
+        except ValueError:
+            pass
 
-    prof_dir = os.path.join(PROFILES_DIR, profile_name)
+    safe_name, prof_dir = validate_profile_path(profile_name)
     if not os.path.exists(prof_dir):
-        print(f"[ERROR] Profile '{profile_name}' does not exist.")
+        print(f"[ERROR] Profile '{safe_name}' does not exist.")
         return False
 
     meta = load_json(os.path.join(prof_dir, "profile_meta.json"), {})
     email = meta.get("email")
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(('127.0.0.1', 0))
-    port = sock.getsockname()[1]
-    sock.close()
+    cfg = get_config()
+    cfg_port = cfg.get("security", {}).get("loopback_oauth_port", 0)
 
-    redirect_uri = f"http://localhost:{port}"
+    # Cryptographically secure CSRF state
+    csrf_state = secrets.token_urlsafe(32)
     auth_code_holder = []
+    auth_error_holder = []
 
     class OAuthHandler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
             parsed = urllib.parse.urlparse(self.path)
             query = urllib.parse.parse_qs(parsed.query)
+
+            if "error" in query:
+                err_type = query["error"][0]
+                auth_error_holder.append(err_type)
+                self.send_response(400)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(f"<!DOCTYPE html><html><body><h2>Authentication Error: {err_type}</h2></body></html>".encode())
+                return
+
+            req_state = query.get("state", [""])[0]
+            if not req_state or not secrets.compare_digest(req_state, csrf_state):
+                auth_error_holder.append("csrf_state_mismatch")
+                self.send_response(400)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(b"<!DOCTYPE html><html><body><h2>Error: CSRF state verification failed</h2></body></html>")
+                return
+
             if "code" in query:
                 auth_code_holder.append(query["code"][0])
                 self.send_response(200)
@@ -898,13 +1261,28 @@ def authenticate_profile(profile_name):
             else:
                 self.send_response(400)
                 self.end_headers()
-                self.wfile.write(b"Authorization failed.")
+                self.wfile.write(b"Authorization failed: no code provided.")
 
         def log_message(self, format, *args):
             pass
 
-    server = http.server.HTTPServer(('127.0.0.1', port), OAuthHandler)
+    # Try configured port, fallback to dynamic port 0
+    server = None
+    candidate_ports = ([cfg_port] if cfg_port and cfg_port > 0 else []) + [0]
+    for cp in candidate_ports:
+        try:
+            server = http.server.HTTPServer(('127.0.0.1', cp), OAuthHandler)
+            break
+        except OSError:
+            continue
+
+    if not server:
+        print("[ERROR] Could not start OAuth loopback server on 127.0.0.1.")
+        return False
+
+    port = server.server_address[1]
     server.timeout = 1.0
+    redirect_uri = f"http://localhost:{port}"
 
     params = {
         'client_id': ANTIGRAVITY_CLIENT_ID,
@@ -912,22 +1290,27 @@ def authenticate_profile(profile_name):
         'response_type': 'code',
         'scope': 'openid https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
         'access_type': 'offline',
-        'prompt': 'consent'
+        'prompt': 'consent',
+        'state': csrf_state
     }
     if email:
         params['login_hint'] = email
 
     auth_url = 'https://accounts.google.com/o/oauth2/v2/auth?' + urllib.parse.urlencode(params)
-    print(f"\n[AUTH] Opening browser to connect '{profile_name}' ({email or 'Google Account'})...")
+    print(f"\n[AUTH] Opening browser to connect '{safe_name}' ({email or 'Google Account'})...")
     print(f"[AUTH] If the browser does not open automatically, visit:\n{auth_url}\n")
     webbrowser.open(auth_url)
 
     t0 = time.time()
     try:
-        while not auth_code_holder and time.time() - t0 < 120:
+        while not auth_code_holder and not auth_error_holder and time.time() - t0 < 120:
             server.handle_request()
     finally:
         server.server_close()
+
+    if auth_error_holder:
+        print(f"[ERROR] Authorization failed: {auth_error_holder[0]}")
+        return False
 
     if not auth_code_holder:
         print("[ERROR] Authorization timed out or was cancelled.")
@@ -944,7 +1327,7 @@ def authenticate_profile(profile_name):
     data = urllib.parse.urlencode(token_params).encode('utf-8')
     req = urllib.request.Request('https://oauth2.googleapis.com/token', data=data)
     try:
-        res = urllib.request.urlopen(req, timeout=10)
+        res = urllib.request.urlopen(req, timeout=10.0)
         ans = json.loads(res.read().decode('utf-8'))
     except Exception as e:
         print(f"[ERROR] Failed to exchange authorization code: {e}")
@@ -959,7 +1342,7 @@ def authenticate_profile(profile_name):
         print("[ERROR] Token exchange did not return a refresh token. Please re-authenticate.")
         return False
 
-    exp_dt = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=expires_in)
+    exp_dt = dt.datetime.now(dt.UTC) + dt.timedelta(seconds=expires_in)
 
     blob_data = {
         "token": {
@@ -973,8 +1356,7 @@ def authenticate_profile(profile_name):
     }
 
     cred_file = os.path.join(prof_dir, "credential_blob.bin")
-    with open(cred_file, "w", encoding="utf-8") as f:
-        json.dump(blob_data, f, indent=2)
+    save_json(cred_file, blob_data)
 
     oauth_data = {
         "access_token": access_token,
@@ -991,8 +1373,13 @@ def authenticate_profile(profile_name):
     meta["saved_at"] = dt.datetime.now().isoformat()
     save_json(os.path.join(prof_dir, "profile_meta.json"), meta)
 
-    print(f"[OK] Successfully authenticated and saved Antigravity credentials for '{profile_name}' ({new_email})!")
+    CIRCUIT_BREAKER.reset(safe_name)
+    print(f"[OK] Successfully authenticated and saved Antigravity credentials for '{safe_name}' ({new_email})!")
     return True
+
+
+# Backward compatibility alias
+oauth_authorize_interactive = authenticate_profile
 
 
 def fetch_live_quota():
@@ -1012,7 +1399,7 @@ def fetch_live_quota():
             "x-codeium-csrf-token": csrf,
         }
         req = urllib.request.Request(url, data=b"{}", headers=headers)
-        res = urllib.request.urlopen(req, context=ctx, timeout=3)
+        res = urllib.request.urlopen(req, context=ctx, timeout=3.0)
         return json.loads(res.read().decode('utf-8'))
     except Exception:
         return None
@@ -1020,8 +1407,9 @@ def fetch_live_quota():
 
 def fetch_profile_tier(profile_name, auth_bearer=None):
     """Queries Google Cloud Code API to determine the exact subscription tier (Free vs Pro vs Ultra)."""
+    safe_name, _ = validate_profile_path(profile_name)
     if not auth_bearer:
-        auth_bearer = refresh_profile_token(profile_name)
+        auth_bearer = refresh_profile_token(safe_name)
     if not auth_bearer:
         return {"tier_id": "free-tier", "tier_label": "Free Tier", "upgrade_target": "Google AI Pro"}
     try:
@@ -1037,7 +1425,7 @@ def fetch_profile_tier(profile_name, auth_bearer=None):
                 "User-Agent": "antigravity/2.23.0"
             }
         )
-        with urllib.request.urlopen(req, context=ctx, timeout=3) as res:
+        with urllib.request.urlopen(req, context=ctx, timeout=3.0) as res:
             cd = json.loads(res.read().decode('utf-8'))
             cur_id = cd.get("currentTier", {}).get("id", "free-tier")
             paid_name = cd.get("paidTier", {}).get("name", "Google AI Pro")
@@ -1056,7 +1444,7 @@ def fetch_profile_tier(profile_name, auth_bearer=None):
 
 def fetch_profile_quota(profile_name):
     """Fetches real-time quota for a specific profile directly from Google API or local LS."""
-    prof_dir = os.path.join(PROFILES_DIR, profile_name)
+    safe_name, prof_dir = validate_profile_path(profile_name)
     cred_file = os.path.join(prof_dir, "credential_blob.bin")
     meta = load_json(os.path.join(prof_dir, "profile_meta.json"), {})
     email = meta.get("email")
@@ -1065,72 +1453,115 @@ def fetch_profile_quota(profile_name):
         if os.path.exists(acc_file):
             email = load_json(acc_file, {}).get("active")
 
+    # 0. Check Circuit Breaker
+    allowed, reason = CIRCUIT_BREAKER.should_allow_request(safe_name)
+    if not allowed:
+        if "auth_revoked" in reason:
+            return {"auth_required": True, "error": "auth_required", "error_desc": "Authentication required"}
+        return {"rate_limited": True, "error": "rate_limited", "error_desc": f"Rate limited. Backing off ({reason})"}
+
     # 1. If this profile matches the live running Language Server, use live LS quota
-    live_email = get_live_antigravity_email()
-    if live_email and email and live_email.lower() == email.lower():
-        ls_q = fetch_live_quota()
-        if ls_q:
-            parsed = parse_quota_data(ls_q)
-            if parsed and parsed.get("5h_pct") is not None:
-                try:
-                    raw_blob, _ = read_windows_credential()
-                    if raw_blob and os.path.exists(prof_dir):
-                        with open(cred_file, "wb") as f:
-                            f.write(raw_blob)
-                except Exception:
-                    pass
-                tier_info = fetch_profile_tier(profile_name)
-                parsed.update(tier_info)
-                return parsed
+    try:
+        live_email = get_live_antigravity_email()
+        if live_email and email and live_email.lower() == email.lower():
+            ls_q = fetch_live_quota()
+            if ls_q:
+                parsed = parse_quota_data(ls_q)
+                if parsed and parsed.get("5h_pct") is not None:
+                    try:
+                        raw_blob, _ = read_windows_credential()
+                        if raw_blob and os.path.exists(prof_dir):
+                            with open(cred_file, "wb") as f:
+                                f.write(raw_blob)
+                    except Exception:
+                        pass
+                    tier_info = fetch_profile_tier(safe_name)
+                    parsed.update(tier_info)
+                    CIRCUIT_BREAKER.record_success(safe_name)
+                    return parsed
+    except Exception:
+        pass
 
     # 2. Query Google Cloud Code API directly with profile access token
-    if os.path.exists(cred_file):
+    if not os.path.exists(cred_file):
+        return {"auth_required": True, "error": "auth_required", "error_desc": "Profile credential file missing"}
+
+    try:
+        cred = load_json(cred_file, {})
+        auth_tok = cred.get("token", {}).get("access_token")
+        if not auth_tok:
+            auth_tok = refresh_profile_token(safe_name)
+
+        if not auth_tok:
+            CIRCUIT_BREAKER.record_401(safe_name)
+            return {"auth_required": True, "error": "auth_required", "error_desc": "Valid token missing"}
+
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        def do_query(tok):
+            url = "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary"
+            req = urllib.request.Request(
+                url,
+                data=b"{}",
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {tok}",
+                    "User-Agent": "antigravity/2.23.0"
+                }
+            )
+            res = urllib.request.urlopen(req, context=ctx, timeout=4.0)
+            return json.loads(res.read().decode('utf-8'))
+
         try:
-            with open(cred_file, "r", encoding="utf-8") as f:
-                cred = json.load(f)
-            auth_tok = cred.get("token", {}).get("access_token")
+            data = do_query(auth_tok)
+            parsed = parse_quota_data(data)
+            if parsed and parsed.get("5h_pct") is not None:
+                tier_info = fetch_profile_tier(safe_name, auth_bearer=auth_tok)
+                parsed.update(tier_info)
+                CIRCUIT_BREAKER.record_success(safe_name)
+                return parsed
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                CIRCUIT_BREAKER.record_429(safe_name)
+                return {"rate_limited": True, "error": "rate_limited", "error_desc": "429 Too Many Requests"}
+            elif e.code in (401, 403):
+                new_tok = refresh_profile_token(safe_name)
+                if new_tok:
+                    try:
+                        data = do_query(new_tok)
+                        parsed = parse_quota_data(data)
+                        if parsed and parsed.get("5h_pct") is not None:
+                            tier_info = fetch_profile_tier(safe_name, auth_bearer=new_tok)
+                            parsed.update(tier_info)
+                            CIRCUIT_BREAKER.record_success(safe_name)
+                            return parsed
+                    except urllib.error.HTTPError as e2:
+                        if e2.code == 429:
+                            CIRCUIT_BREAKER.record_429(safe_name)
+                            return {"rate_limited": True, "error": "rate_limited", "error_desc": "429 Too Many Requests"}
+                        CIRCUIT_BREAKER.record_401(safe_name)
+                        return {"auth_required": True, "error": "auth_required", "error_desc": f"Auth failed after refresh ({e2.code})"}
+                else:
+                    CIRCUIT_BREAKER.record_401(safe_name)
+                    return {"auth_required": True, "error": "auth_required", "error_desc": "Token refresh failed"}
+            else:
+                return {"error": f"http_{e.code}", "error_desc": f"HTTP Error {e.code}"}
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+            return {"offline": True, "error": "offline", "error_desc": f"Network unreachable: {e}"}
 
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-
-            def do_query(tok):
-                url = "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary"
-                req = urllib.request.Request(
-                    url,
-                    data=b"{}",
-                    headers={
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {tok}",
-                        "User-Agent": "antigravity/2.23.0"
-                    }
-                )
-                res = urllib.request.urlopen(req, context=ctx, timeout=4)
-                return json.loads(res.read().decode('utf-8'))
-
-            if auth_tok:
-                try:
-                    data = do_query(auth_tok)
-                    parsed = parse_quota_data(data)
-                    if parsed and parsed.get("5h_pct") is not None:
-                        tier_info = fetch_profile_tier(profile_name, auth_bearer=auth_tok)
-                        parsed.update(tier_info)
-                        return parsed
-                except urllib.error.HTTPError as e:
-                    if e.code in (401, 403):
-                        new_tok = refresh_profile_token(profile_name)
-                        if new_tok:
-                            data = do_query(new_tok)
-                            parsed = parse_quota_data(data)
-                            if parsed and parsed.get("5h_pct") is not None:
-                                tier_info = fetch_profile_tier(profile_name, auth_bearer=new_tok)
-                                parsed.update(tier_info)
-                                return parsed
-        except Exception:
-            pass
+    except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+        return {"offline": True, "error": "offline", "error_desc": f"Network unreachable: {e}"}
+    except Exception as e:
+        return {"error": "unknown", "error_desc": str(e)}
 
     return None
 
+
+# ---------------------------------------------------------------------------
+# Claude for Windows Status & Desktop App Telemetry
+# ---------------------------------------------------------------------------
 
 def get_claude_status():
     """Inspects official Claude for Windows App credentials, state, and real-time subscription quotas."""
@@ -1168,7 +1599,7 @@ def get_claude_status():
         "quota_source": "Claude for Windows Desktop App"
     }
 
-    if os.path.exists(claude_pkg_dir):
+    if claude_pkg_dir and os.path.exists(claude_pkg_dir):
         status["detected"] = True
         status["is_windows_app"] = True
 
@@ -1204,20 +1635,22 @@ def get_claude_status():
         except Exception:
             pass
 
-    # 3. Read live Quota from Claude Windows App Local Storage (LevelDB)
-    ldb_dir = os.path.join(claude_pkg_dir, "Local Storage", "leveldb")
+    # 3. Read live Quota from Claude Windows App Local Storage (LevelDB) with non-blocking shared reads
     found_quota = False
-    if os.path.exists(ldb_dir):
-        try:
-            files = sorted(
-                glob.glob(os.path.join(ldb_dir, "*.ldb")) + glob.glob(os.path.join(ldb_dir, "*.log")),
-                key=os.path.getmtime,
-                reverse=True
-            )
-            for fpath in files:
-                try:
-                    with open(fpath, "rb") as f:
-                        content = f.read()
+    if claude_pkg_dir:
+        ldb_dir = os.path.join(claude_pkg_dir, "Local Storage", "leveldb")
+        if os.path.exists(ldb_dir):
+            try:
+                files = sorted(
+                    glob.glob(os.path.join(ldb_dir, "*.ldb")) + glob.glob(os.path.join(ldb_dir, "*.log")),
+                    key=os.path.getmtime,
+                    reverse=True
+                )
+                for fpath in files:
+                    try:
+                        content = read_shared_file(fpath, max_bytes=512 * 1024, tail_only=True)
+                        if not content:
+                            continue
 
                         # Check explicit five_hour and seven_day fields first
                         fh_m = re.findall(rb'"five_hour"[^}]+"utilization":\s*([0-9\.]+)', content)
@@ -1240,7 +1673,6 @@ def get_claude_status():
                             status["quota_weekly_used"] = s_pct
                             found_quota = True
 
-                        # Check general utilization matches
                         matches = re.findall(rb'"utilization":\s*([0-9\.]+)', content)
                         if matches:
                             for m in matches:
@@ -1262,36 +1694,36 @@ def get_claude_status():
                         if found_quota:
                             status["quota_source"] = f"Desktop App LevelDB ({os.path.basename(fpath)})"
                             break
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
-    # 4. Check plan-usage-history.json
-    hist_path = os.path.join(claude_pkg_dir, "plan-usage-history.json")
-    if os.path.exists(hist_path):
-        try:
-            hist_data = load_json(hist_path, {})
-            samples = hist_data.get("samples", [])
-            if samples:
-                latest = samples[-1]
-                u = latest.get("u", {})
-                sd = u.get("sd")
-                if sd is not None and not found_quota:
-                    s_pct = round(sd)
-                    status["weekly_used_pct"] = s_pct
-                    status["weekly_rem_pct"] = max(0, 100 - s_pct)
-                    status["quota_weekly_pct"] = status["weekly_rem_pct"]
-                    status["quota_weekly_used"] = s_pct
-                fh = u.get("fh")
-                if fh is not None and not found_quota:
-                    f_pct = round(fh)
-                    status["session_used_pct"] = f_pct
-                    status["session_rem_pct"] = max(0, 100 - f_pct)
-                    status["quota_5h_pct"] = status["session_rem_pct"]
-                    status["quota_5h_used"] = f_pct
-        except Exception:
-            pass
+        # 4. Check plan-usage-history.json
+        hist_path = os.path.join(claude_pkg_dir, "plan-usage-history.json")
+        if os.path.exists(hist_path):
+            try:
+                hist_data = load_json(hist_path, {})
+                samples = hist_data.get("samples", [])
+                if samples:
+                    latest = samples[-1]
+                    u = latest.get("u", {})
+                    sd = u.get("sd")
+                    if sd is not None and not found_quota:
+                        s_pct = round(sd)
+                        status["weekly_used_pct"] = s_pct
+                        status["weekly_rem_pct"] = max(0, 100 - s_pct)
+                        status["quota_weekly_pct"] = status["weekly_rem_pct"]
+                        status["quota_weekly_used"] = s_pct
+                    fh = u.get("fh")
+                    if fh is not None and not found_quota:
+                        f_pct = round(fh)
+                        status["session_used_pct"] = f_pct
+                        status["session_rem_pct"] = max(0, 100 - f_pct)
+                        status["quota_5h_pct"] = status["session_rem_pct"]
+                        status["quota_5h_used"] = f_pct
+            except Exception:
+                pass
 
     # 5. Check running Claude Windows App processes
     if psutil:
@@ -1339,7 +1771,7 @@ def print_claude_status():
     show_model_only = cfg.get("ui", {}).get("show_model_only_quota", False)
 
     app_state = f"Running (PID: {cs['app_pids'][0]}, {len(cs['app_pids'])} procs)" if cs.get("app_running") else "Ready / Closed"
-    print(f"\n[Subscription Details]")
+    print("\n[Subscription Details]")
     print(f"  Account Email        : {cs['email'] or 'Unknown'}")
     if cs.get("display_name"):
         print(f"  User Name            : {cs['display_name']}")
@@ -1357,19 +1789,18 @@ def print_claude_status():
     w_rem = cs.get('weekly_rem_pct', 8)
     w_warn = " [CRITICAL WARNING]" if w_used >= 85 else ""
 
-    print(f"\n[Claude for Windows Live Quotas (Official Desktop App)]")
+    print("\n[Claude for Windows Live Quotas (Official Desktop App)]")
     print(f"  - Session Limit (5h) : {s_used:>2}% Used ({s_rem:>2}% Remaining) | {cs.get('session_reset_desc', 'Resets in 4 hr 36 min')}")
     print(f"  - Weekly Window (7d) : {w_used:>2}% Used ({w_rem:>2}% Remaining)  | {cs.get('weekly_reset_desc', 'Resets Mon 7:00 PM')}{w_warn}")
     if cs.get("quota_source"):
         print(f"  - Quota Data Source  : {cs['quota_source']}")
 
     if show_model_only:
-        print(f"\n[Antigravity 3P Claude Quota Allocation]")
+        print("\n[Antigravity 3P Claude Quota Allocation]")
         print(f"  - 5-Hour Limit Remaining : {cs['antigravity_3p_5h']}%")
         print(f"  - Weekly Limit Remaining : {cs['antigravity_3p_weekly']}%")
 
     print("\n" + "=" * 70)
-
 
 
 def print_status():
@@ -1382,14 +1813,14 @@ def print_status():
     state = get_state()
     current_prof = state.get("active_google_profile", "unknown")
 
-    print(f"\n[Antigravity IDE & System State]")
+    print("\n[Antigravity IDE & System State]")
     print(f"  Live IDE Session      : {live_email or 'Not running / Unknown'}")
     print(f"  Staged Account        : {staged_email or current_prof}")
     if live_email and staged_email and live_email.lower() != staged_email.lower():
         print(f"  Status Notice         : IDE is running {live_email}. Staged account is {staged_email}.")
-        print(f"                          (Restart Antigravity once active queries complete to switch IDE)")
+        print("                          (Restart Antigravity once active queries complete to switch IDE)")
     else:
-        print(f"  Status Notice         : IDE session is fully synchronized with staged account.")
+        print("  Status Notice         : IDE session is fully synchronized with staged account.")
 
     cfg = get_config()
     show_model_only = cfg.get("ui", {}).get("show_model_only_quota", False)
@@ -1398,8 +1829,7 @@ def print_status():
     if not profiles:
         print("\n  No saved profiles found. Run: ai-switch save <name>")
     else:
-        print(f"\n[Real-Time Quotas For Each Account (Direct Google API)]")
-        # Concurrently fetch quotas across all profiles
+        print("\n[Real-Time Quotas For Each Account (Direct Google API)]")
         quotas = {}
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(profiles) or 1, 4)) as ex:
             futs = {ex.submit(fetch_profile_quota, p["name"]): p["name"] for p in profiles}
@@ -1423,7 +1853,7 @@ def print_status():
                 tag_parts.append("STAGED")
             status_tag = f" [{', '.join(tag_parts)}]" if tag_parts else " [READY]"
             q = quotas.get(name)
-            tier_str = q.get("tier_label", "Free Tier") if q else "Free Tier"
+            tier_str = q.get("tier_label", "Free Tier") if (q and isinstance(q, dict)) else "Free Tier"
             print(f"\n  * #{num_str} {email}{status_tag}  [Tier: {tier_str}]:")
 
             if q and q.get("5h_pct") is not None:
@@ -1438,25 +1868,31 @@ def print_status():
 
                 print(f"      - Google AI Tier         : {tier_str} (Antigravity Core / Upgradeable to Pro)")
                 if p_5h >= 100:
-                    print(f"      - Session Limit (5h)     : 0% Used (100% Remaining) | Ready (Window starts on first prompt)")
+                    print("      - Session Limit (5h)     : 0% Used (100% Remaining) | Ready (Window starts on first prompt)")
                 else:
                     print(f"      - Session Limit (5h)     : {used_5h:>2}% Used ({p_5h:>2}% Remaining) | {s_reset_str}")
 
                 if p_wk >= 100:
-                    print(f"      - Weekly Window (7d)     : 0% Used (100% Remaining) | Ready")
+                    print("      - Weekly Window (7d)     : 0% Used (100% Remaining) | Ready")
                 else:
                     print(f"      - Weekly Window (7d)     : {used_wk:>2}% Used ({p_wk:>2}% Remaining)  | {w_reset_str}{w_warn}")
 
                 if show_model_only:
                     print(f"      - Claude/GPT Limit       : {q['claude_5h_pct']}% (5h) / {q['claude_weekly_pct']}% (weekly)")
+            elif q and q.get("offline"):
+                print(f"      - Google AI Tier         : {tier_str}")
+                print("      - Live Quota             : Offline / Network Unreachable")
+            elif q and q.get("rate_limited"):
+                print(f"      - Google AI Tier         : {tier_str}")
+                print("      - Live Quota             : Rate Limited (429 - Backing off)")
             else:
                 print(f"      - Google AI Tier         : {tier_str}")
-                print(f"      - Live Quota: Not connected (Run: ai-switch auth {name})")
+                print(f"      - Live Quota             : Not connected (Run: ai-switch auth {name})")
 
     # Claude for Windows Section
     cs = get_claude_status()
     if cs.get("detected"):
-        print(f"\n[Claude for Windows Subscription & Live Quotas (Official Desktop App)]")
+        print("\n[Claude for Windows Subscription & Live Quotas (Official Desktop App)]")
         app_str = f"Active ({len(cs['app_pids'])} procs)" if cs.get("app_running") else "Ready"
         s_u = cs.get('session_used_pct', 11)
         s_r = cs.get('session_rem_pct', 89)
@@ -1482,10 +1918,9 @@ def print_status():
     print("=" * 70)
 
 
-
-
 def run_command_with_failover(cmd_args):
-    print(f"[RUN] Executing: {' '.join(cmd_args)}")
+    masked_args = mask_sensitive_arguments(cmd_args)
+    print(f"[RUN] Executing: {' '.join(masked_args)}")
     proc = subprocess.Popen(cmd_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
     is_429 = False
 
@@ -1500,6 +1935,7 @@ def run_command_with_failover(cmd_args):
     if is_429:
         state = get_state()
         curr = state.get("active_google_profile", "current")
+        CIRCUIT_BREAKER.record_429(curr)
         print(f"\n[429 DETECTED] Quota or rate limit hit on '{curr}'!")
         print("[NOTICE] Auto-rotate is disabled. Switch accounts manually with 'ai-switch switch <name>' or 'ai-switch 1/2/3'.")
 
@@ -1546,7 +1982,7 @@ def main():
             restart_antigravity_app()
     elif args.command == "auth":
         target = args.name
-        if str(target).isdigit() and not os.path.exists(os.path.join(PROFILES_DIR, str(target))):
+        if str(target).isdigit():
             target = f"google_{target}"
         authenticate_profile(target)
     elif args.command == "alias":

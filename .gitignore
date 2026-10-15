@@ -18,5 +18,9 @@ credential_blob.bin
 .vscode/
 .idea/
 Thumbs.db
-Desktop.ini
 *.lnk
+
+# Build output
+build/
+dist/
+*.spec.bak
