@@ -1,0 +1,4 @@
+# Standard library modules used: tkinter, ctypes, urllib, ssl, json, os, sys, threading, concurrent.futures
+# Optional dependencies:
+psutil>=5.9.0
+Pillow>=9.0.0

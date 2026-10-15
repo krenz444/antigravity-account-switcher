@@ -1,0 +1,22 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.tmp*
+
+# Runtime State & Profiles
+.usage_state.json
+
+# Local Environment & Secrets
+.env
+.env.*
+.credentials.json
+credential_blob.bin
+*.bin
+
+# Operating System & Editors
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+*.lnk

@@ -1,0 +1,22 @@
+{
+  "antigravity_exe_path": "",
+  "google_profiles": [
+    "google_1",
+    "google_2",
+    "google_3"
+  ],
+  "claude_profile": {
+    "enabled": true,
+    "desktop_app_dir": "",
+    "config_dir": "~/.claude"
+  },
+  "ui": {
+    "refresh_interval_seconds": 60,
+    "theme": "dark_slate",
+    "auto_relaunch_on_switch": false
+  },
+  "security": {
+    "confirm_relaunch": false,
+    "loopback_oauth_port": 8085
+  }
+}

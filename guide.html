@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Antigravity 2.23.0 Multi-Account Switcher Guide</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    .code-box {
+      font-family: 'JetBrains Mono', Consolas, Monaco, 'Courier New', monospace;
+    }
+  </style>
+</head>
+<body class="bg-[var(--background)] text-[var(--foreground)] antialiased p-6 md:p-8 max-w-4xl mx-auto space-y-8">
+
+  <!-- Header Card -->
+  <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 shadow-sm">
+    <div class="flex items-center justify-between flex-wrap gap-4">
+      <div>
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 mb-2">
+          <span>●</span> Ready for Antigravity App 2.23.0 & CLI
+        </div>
+        <h1 class="text-2xl font-bold tracking-tight text-[var(--foreground)]">Google AI Pro Multi-Account Setup & Rotation</h1>
+        <p class="text-[var(--muted-foreground)] text-sm mt-1">Seamless zero-browser switching across multiple Google AI accounts on Windows.</p>
+      </div>
+      <div class="text-right">
+        <span class="text-xs text-[var(--muted-foreground)]">Active Account</span>
+        <div class="font-semibold text-sm text-emerald-500">developer@gmail.com (google_1)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Interactive Setup Checklist -->
+  <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 shadow-sm space-y-4">
+    <h2 class="text-lg font-semibold text-[var(--foreground)] flex items-center gap-2">
+      <span>📋</span> Setup Checklist
+    </h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3" id="checklist">
+      <label class="flex items-start gap-3 p-3 rounded-xl border border-[var(--border)] bg-[var(--background)] cursor-pointer hover:border-[var(--primary)] transition">
+        <input type="checkbox" checked disabled class="mt-1 rounded text-emerald-500 focus:ring-emerald-500">
+        <div>
+          <div class="text-sm font-medium text-[var(--foreground)]">Account 1 Registered</div>
+          <div class="text-xs text-[var(--muted-foreground)]">Snapshotted as <code>google_1</code></div>
+        </div>
+      </label>
+      <label class="flex items-start gap-3 p-3 rounded-xl border border-[var(--border)] bg-[var(--background)] cursor-pointer hover:border-[var(--primary)] transition">
+        <input type="checkbox" id="chk-step2" onchange="toggleStep(2)" class="mt-1 rounded text-blue-500 focus:ring-blue-500">
+        <div>
+          <div class="text-sm font-medium text-[var(--foreground)]">Register Account 2</div>
+          <div class="text-xs text-[var(--muted-foreground)]">Log in and snapshot <code>google_2</code></div>
+        </div>
+      </label>
+      <label class="flex items-start gap-3 p-3 rounded-xl border border-[var(--border)] bg-[var(--background)] cursor-pointer hover:border-[var(--primary)] transition">
+        <input type="checkbox" id="chk-step3" onchange="toggleStep(3)" class="mt-1 rounded text-blue-500 focus:ring-blue-500">
+        <div>
+          <div class="text-sm font-medium text-[var(--foreground)]">Register Account 3 (Optional)</div>
+          <div class="text-xs text-[var(--muted-foreground)]">Log in and snapshot <code>google_3</code></div>
+        </div>
+      </label>
+      <label class="flex items-start gap-3 p-3 rounded-xl border border-[var(--border)] bg-[var(--background)] cursor-pointer hover:border-[var(--primary)] transition">
+        <input type="checkbox" id="chk-step4" onchange="toggleStep(4)" class="mt-1 rounded text-blue-500 focus:ring-blue-500">
+        <div>
+          <div class="text-sm font-medium text-[var(--foreground)]">Test Switching in 2.23.0</div>
+          <div class="text-xs text-[var(--muted-foreground)]">Run switch command & press <code>Ctrl+R</code></div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <!-- Step-by-Step Instructions -->
+  <div class="space-y-6">
+
+    <!-- Step 1: Add Account 2 -->
+    <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 shadow-sm space-y-4">
+      <div class="flex items-center gap-3">
+        <span class="flex items-center justify-center w-7 h-7 rounded-full bg-blue-500/10 text-blue-500 font-bold text-sm">1</span>
+        <h3 class="text-lg font-semibold text-[var(--foreground)]">Add Your 2nd Google Account</h3>
+      </div>
+      <p class="text-sm text-[var(--muted-foreground)]">
+        Sign out in the Antigravity 2.23.0 app (or via terminal), sign in with your 2nd Google AI Pro account, and snapshot the profile.
+      </p>
+
+      <div class="space-y-3">
+        <div class="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">A. Sign Out Current Account</div>
+        <div class="flex items-center justify-between p-3 rounded-xl bg-[var(--background)] border border-[var(--border)] code-box text-sm">
+          <span>agy /logout</span>
+          <button onclick="copyCode('agy /logout', this)" class="px-2.5 py-1 text-xs rounded-lg border border-[var(--border)] hover:bg-[var(--card)] text-[var(--muted-foreground)]">Copy</button>
+        </div>
+        <p class="text-xs text-[var(--muted-foreground)] italic">Or in the Antigravity App: click Settings (gear icon in lower-left) &rarr; "Sign Out".</p>
+
+        <div class="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)] mt-2">B. Log In with 2nd Google Account</div>
+        <div class="flex items-center justify-between p-3 rounded-xl bg-[var(--background)] border border-[var(--border)] code-box text-sm">
+          <span>agy /login</span>
+          <button onclick="copyCode('agy /login', this)" class="px-2.5 py-1 text-xs rounded-lg border border-[var(--border)] hover:bg-[var(--card)] text-[var(--muted-foreground)]">Copy</button>
+        </div>
+        <p class="text-xs text-[var(--muted-foreground)]">Complete the browser sign-in prompt with your 2nd account.</p>
+
+        <div class="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)] mt-2">C. Snapshot Profile as google_2</div>
+        <div class="flex items-center justify-between p-3 rounded-xl bg-[var(--background)] border border-[var(--border)] code-box text-sm text-blue-400">
+          <span>.\tools\account_router\ai_switch.ps1 save google_2</span>
+          <button onclick="copyCode('.\\tools\\account_router\\ai_switch.ps1 save google_2', this)" class="px-2.5 py-1 text-xs rounded-lg border border-[var(--border)] hover:bg-[var(--card)] text-[var(--muted-foreground)]">Copy</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 2: Add Account 3 -->
+    <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 shadow-sm space-y-4">
+      <div class="flex items-center gap-3">
+        <span class="flex items-center justify-center w-7 h-7 rounded-full bg-purple-500/10 text-purple-500 font-bold text-sm">2</span>
+        <h3 class="text-lg font-semibold text-[var(--foreground)]">Add Your 3rd Google Account (If You Have One)</h3>
+      </div>
+      <p class="text-sm text-[var(--muted-foreground)]">
+        Repeat the exact same flow for Account 3, then switch back to Account 1:
+      </p>
+
+      <div class="space-y-3">
+        <div class="flex items-center justify-between p-3 rounded-xl bg-[var(--background)] border border-[var(--border)] code-box text-sm">
+          <span>agy /logout</span>
+          <button onclick="copyCode('agy /logout', this)" class="px-2.5 py-1 text-xs rounded-lg border border-[var(--border)] hover:bg-[var(--card)] text-[var(--muted-foreground)]">Copy</button>
+        </div>
+        <div class="flex items-center justify-between p-3 rounded-xl bg-[var(--background)] border border-[var(--border)] code-box text-sm">
+          <span>agy /login</span>
+          <button onclick="copyCode('agy /login', this)" class="px-2.5 py-1 text-xs rounded-lg border border-[var(--border)] hover:bg-[var(--card)] text-[var(--muted-foreground)]">Copy</button>
+        </div>
+        <div class="flex items-center justify-between p-3 rounded-xl bg-[var(--background)] border border-[var(--border)] code-box text-sm text-purple-400">
+          <span>.\tools\account_router\ai_switch.ps1 save google_3</span>
+          <button onclick="copyCode('.\\tools\\account_router\\ai_switch.ps1 save google_3', this)" class="px-2.5 py-1 text-xs rounded-lg border border-[var(--border)] hover:bg-[var(--card)] text-[var(--muted-foreground)]">Copy</button>
+        </div>
+        <div class="flex items-center justify-between p-3 rounded-xl bg-[var(--background)] border border-[var(--border)] code-box text-sm text-emerald-400">
+          <span>.\tools\account_router\ai_switch.ps1 1</span>
+          <button onclick="copyCode('.\\tools\\account_router\\ai_switch.ps1 1', this)" class="px-2.5 py-1 text-xs rounded-lg border border-[var(--border)] hover:bg-[var(--card)] text-[var(--muted-foreground)]">Copy</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 3: Daily Workflow in Antigravity App 2.23.0 -->
+    <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 shadow-sm space-y-4">
+      <div class="flex items-center gap-3">
+        <span class="flex items-center justify-center w-7 h-7 rounded-full bg-emerald-500/10 text-emerald-500 font-bold text-sm">3</span>
+        <h3 class="text-lg font-semibold text-[var(--foreground)]">Daily Workflow in Antigravity App 2.23.0</h3>
+      </div>
+      <p class="text-sm text-[var(--muted-foreground)]">
+        Whenever you hit a usage limit or want to switch accounts while using the desktop client:
+      </p>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+        <div class="p-4 rounded-xl border border-[var(--border)] bg-[var(--background)] space-y-2">
+          <div class="font-semibold text-sm text-[var(--foreground)]">Action 1: Switch Account</div>
+          <p class="text-xs text-[var(--muted-foreground)]">Run a single numeric command in PowerShell:</p>
+          <div class="p-2.5 rounded-lg bg-[var(--card)] border border-[var(--border)] code-box text-xs">
+            .\tools\account_router\ai_switch.ps1 2
+          </div>
+          <p class="text-xs text-emerald-500">✓ Swaps OAuth tokens & App storage in &lt;10ms</p>
+        </div>
+        <div class="p-4 rounded-xl border border-[var(--border)] bg-[var(--background)] space-y-2">
+          <div class="font-semibold text-sm text-[var(--foreground)]">Action 2: Reload App Window</div>
+          <p class="text-xs text-[var(--muted-foreground)]">Click the Antigravity App window and press:</p>
+          <div class="p-2.5 rounded-lg bg-[var(--card)] border border-[var(--border)] code-box text-xs text-center font-bold text-blue-400">
+            Ctrl + R
+          </div>
+          <p class="text-xs text-emerald-500">✓ Re-binds UI & language server instantly</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 4: Quick Reference Command Table -->
+    <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 shadow-sm space-y-4">
+      <h3 class="text-lg font-semibold text-[var(--foreground)] flex items-center gap-2">
+        <span>⚡</span> Quick Reference Cheatsheet
+      </h3>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm border-collapse">
+          <thead>
+            <tr class="border-b border-[var(--border)] text-xs uppercase tracking-wider text-[var(--muted-foreground)]">
+              <th class="py-2.5 px-3">Command</th>
+              <th class="py-2.5 px-3">What it does</th>
+              <th class="py-2.5 px-3 text-right">Copy</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-[var(--border)] code-box text-xs">
+            <tr>
+              <td class="py-2.5 px-3 font-medium text-emerald-400">.\tools\account_router\ai_switch.ps1 1</td>
+              <td class="py-2.5 px-3 text-[var(--muted-foreground)] font-sans">Switch to Account 1</td>
+              <td class="py-2.5 px-3 text-right"><button onclick="copyCode('.\\tools\\account_router\\ai_switch.ps1 1', this)" class="px-2 py-0.5 rounded border border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--background)]">Copy</button></td>
+            </tr>
+            <tr>
+              <td class="py-2.5 px-3 font-medium text-blue-400">.\tools\account_router\ai_switch.ps1 2</td>
+              <td class="py-2.5 px-3 text-[var(--muted-foreground)] font-sans">Switch to Account 2</td>
+              <td class="py-2.5 px-3 text-right"><button onclick="copyCode('.\\tools\\account_router\\ai_switch.ps1 2', this)" class="px-2 py-0.5 rounded border border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--background)]">Copy</button></td>
+            </tr>
+            <tr>
+              <td class="py-2.5 px-3 font-medium text-purple-400">.\tools\account_router\ai_switch.ps1 3</td>
+              <td class="py-2.5 px-3 text-[var(--muted-foreground)] font-sans">Switch to Account 3</td>
+              <td class="py-2.5 px-3 text-right"><button onclick="copyCode('.\\tools\\account_router\\ai_switch.ps1 3', this)" class="px-2 py-0.5 rounded border border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--background)]">Copy</button></td>
+            </tr>
+            <tr>
+              <td class="py-2.5 px-3 font-medium text-emerald-400">.\tools\account_router\ai_switch.ps1 auth 1</td>
+              <td class="py-2.5 px-3 text-[var(--muted-foreground)] font-sans">1-click browser OAuth connect for Account 1</td>
+              <td class="py-2.5 px-3 text-right"><button onclick="copyCode('.\\tools\\account_router\\ai_switch.ps1 auth 1', this)" class="px-2 py-0.5 rounded border border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--background)]">Copy</button></td>
+            </tr>
+            <tr>
+              <td class="py-2.5 px-3 font-medium">.\tools\account_router\ai_switch.ps1 status</td>
+              <td class="py-2.5 px-3 text-[var(--muted-foreground)] font-sans">View active account, profiles, & real-time quotas</td>
+              <td class="py-2.5 px-3 text-right"><button onclick="copyCode('.\\tools\\account_router\\ai_switch.ps1 status', this)" class="px-2 py-0.5 rounded border border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--background)]">Copy</button></td>
+            </tr>
+            <tr>
+              <td class="py-2.5 px-3 font-medium text-cyan-400">.\tools\account_router\ai_switch.ps1 run agy ...</td>
+              <td class="py-2.5 px-3 text-[var(--muted-foreground)] font-sans">Run CLI command and monitor for rate limits</td>
+              <td class="py-2.5 px-3 text-right"><button onclick="copyCode('.\\tools\\account_router\\ai_switch.ps1 run agy --prompt \"test\"', this)" class="px-2 py-0.5 rounded border border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--background)]">Copy</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    function copyCode(text, btn) {
+      navigator.clipboard.writeText(text).then(() => {
+        const orig = btn.innerText;
+        btn.innerText = 'Copied!';
+        btn.classList.add('text-emerald-500', 'border-emerald-500');
+        setTimeout(() => {
+          btn.innerText = orig;
+          btn.classList.remove('text-emerald-500', 'border-emerald-500');
+        }, 1500);
+      });
+    }
+
+    function toggleStep(n) {
+      try {
+        localStorage.setItem('ag_step_' + n, document.getElementById('chk-step' + n).checked);
+      } catch (e) {}
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      try {
+        [2, 3, 4].forEach(n => {
+          const val = localStorage.getItem('ag_step_' + n);
+          if (val === 'true') {
+            const el = document.getElementById('chk-step' + n);
+            if (el) el.checked = true;
+          }
+        });
+      } catch (e) {}
+    });
+  </script>
+</body>
+</html>
