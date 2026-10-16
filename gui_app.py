@@ -76,6 +76,7 @@ import router
 THEMES = {
     "modern_obsidian": {
         "name": "Modern Obsidian",
+        "short_name": "Obsidian",
         "icon": "✨",
         "bg_main": "#080c14",
         "bg_card": "#0f1728",
@@ -109,6 +110,7 @@ THEMES = {
     },
     "tokyo_night": {
         "name": "Tokyo Night",
+        "short_name": "Tokyo Night",
         "icon": "🌸",
         "bg_main": "#1a1b26",
         "bg_card": "#24283b",
@@ -142,6 +144,7 @@ THEMES = {
     },
     "cyberpunk_neon": {
         "name": "Cyberpunk Neon",
+        "short_name": "Cyberpunk",
         "icon": "⚡",
         "bg_main": "#06060a",
         "bg_card": "#0e111a",
@@ -175,6 +178,7 @@ THEMES = {
     },
     "catppuccin_mocha": {
         "name": "Catppuccin Mocha",
+        "short_name": "Mocha",
         "icon": "🍵",
         "bg_main": "#11111b",
         "bg_card": "#1e1e2e",
@@ -208,6 +212,7 @@ THEMES = {
     },
     "nordic_frost": {
         "name": "Nordic Frost",
+        "short_name": "Nordic",
         "icon": "❄️",
         "bg_main": "#242933",
         "bg_card": "#2e3440",
@@ -241,6 +246,7 @@ THEMES = {
     },
     "dark_slate": {
         "name": "Dark Slate",
+        "short_name": "Dark Slate",
         "icon": "🌌",
         "bg_main": "#0b1120",
         "bg_card": "#131d31",
@@ -515,37 +521,69 @@ class AccountSwitchboardApp:
 
     def setup_ui(self):
         t = self.theme
-        # 1. Top Header Frame
+        # 1. Top Header Frame (Two-Tier Spacious Layout: Zero Overlap Guaranteed)
         self.header = tk.Frame(self.root, bg=t["bg_main"], padx=24, pady=12)
         self.header.pack(fill=tk.X)
 
-        # Action Buttons (Pack RIGHT first so they are anchored and never clipped)
-        self.btn_box = tk.Frame(self.header, bg=t["bg_main"])
-        self.btn_box.pack(side=tk.RIGHT, pady=2)
+        # Row 1: Brand Identity & Actions Toolbar
+        self.top_row = tk.Frame(self.header, bg=t["bg_main"])
+        self.top_row.pack(fill=tk.X)
 
+        # Left: Brand Icon, Title, and Live Sync Status Pill
+        self.brand_frame = tk.Frame(self.top_row, bg=t["bg_main"])
+        self.brand_frame.pack(side=tk.LEFT)
+        self.title_box = self.brand_frame  # backward compatibility alias
+
+        self.brand_icon = tk.Label(
+            self.brand_frame,
+            text="⚡",
+            font=("Segoe UI", 11, "bold"),
+            fg=t["color_active"],
+            bg=t["btn_secondary"],
+            padx=7,
+            pady=2,
+            relief=tk.FLAT
+        )
+        self.brand_icon.pack(side=tk.LEFT, padx=(0, 9))
+
+        self.app_title = tk.Label(
+            self.brand_frame,
+            text="Antigravity Switchboard",
+            font=("Segoe UI", 13, "bold"),
+            fg=t["text_main"],
+            bg=t["bg_main"]
+        )
+        self.app_title.pack(side=tk.LEFT, padx=(0, 10))
+
+        self.sync_badge = tk.Label(
+            self.brand_frame,
+            text="● Live",
+            font=("Segoe UI", 8, "bold"),
+            fg=t["sync_badge_fg"],
+            bg=t["sync_badge_bg"],
+            padx=8,
+            pady=3,
+            relief=tk.FLAT
+        )
+        self.sync_badge.pack(side=tk.LEFT)
+
+        # Right: Actions Toolbar
+        self.btn_box = tk.Frame(self.top_row, bg=t["bg_main"])
+        self.btn_box.pack(side=tk.RIGHT)
+
+        short_name = t.get("short_name", t["name"])
         self.theme_btn = make_button(
             self.btn_box,
-            text=f"{t['icon']} {t['name']} ▾",
+            text=f"{t['icon']} {short_name} ▾",
             font=("Segoe UI", 9, "bold"),
             bg=t["btn_secondary"],
             fg=t["text_main"],
             hover_bg=t["btn_secondary_hover"],
-            padx=11,
-            pady=5,
+            padx=10,
+            pady=4,
             command=self.on_toggle_theme_menu
         )
-        self.theme_btn.pack(side=tk.LEFT, padx=(0, 8))
-
-        self.sync_badge = tk.Label(
-            self.btn_box,
-            text="● Live Syncing...",
-            font=("Segoe UI", 8, "bold"),
-            fg=t["sync_badge_fg"],
-            bg=t["sync_badge_bg"],
-            padx=9,
-            pady=4
-        )
-        self.sync_badge.pack(side=tk.LEFT, padx=(0, 8))
+        self.theme_btn.pack(side=tk.LEFT, padx=(0, 6))
 
         self.add_btn = make_button(
             self.btn_box,
@@ -554,8 +592,8 @@ class AccountSwitchboardApp:
             bg=t["btn_secondary"],
             fg=t["text_main"],
             hover_bg=t["btn_secondary_hover"],
-            padx=12,
-            pady=5,
+            padx=11,
+            pady=4,
             command=self.on_add_account
         )
         self.add_btn.pack(side=tk.LEFT, padx=(0, 6))
@@ -567,40 +605,35 @@ class AccountSwitchboardApp:
             bg=t["btn_primary"],
             fg="#ffffff",
             hover_bg=t["btn_primary_hover"],
-            padx=13,
-            pady=5,
+            padx=12,
+            pady=4,
             command=self.poll_all_quotas_async
         )
         self.refresh_btn.pack(side=tk.LEFT)
 
-        # Title Box (Left side, fills remaining space)
-        self.title_box = tk.Frame(self.header, bg=t["bg_main"])
-        self.title_box.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
-        self.app_title = tk.Label(
-            self.title_box,
-            text="Antigravity Account Switchboard",
-            font=("Segoe UI", 15, "bold"),
-            fg=t["text_main"],
-            bg=t["bg_main"]
-        )
-        self.app_title.pack(anchor="w")
+        # Row 2: Tagline Subtitle (has entire width with zero control collisions)
+        self.sub_row = tk.Frame(self.header, bg=t["bg_main"])
+        self.sub_row.pack(fill=tk.X, pady=(5, 0))
 
         self.subtitle = tk.Label(
-            self.title_box,
-            text="Real-Time Antigravity & Claude Quotas • 5-Hour & Weekly Windows • 1-Click Switcher",
-            font=("Segoe UI", 9),
+            self.sub_row,
+            text="Multi-Account Quota Monitor • 5-Hour & Weekly Sliding Windows • 1-Click Instant Switcher",
+            font=("Segoe UI", 8),
             fg=t["text_muted"],
             bg=t["bg_main"]
         )
-        self.subtitle.pack(anchor="w")
+        self.subtitle.pack(side=tk.LEFT)
 
-        # 2. Status Banner (Active Session Bar)
+        # Subtle Header Separator
+        self.header_sep = tk.Frame(self.root, bg=t["footer_sep"], height=1)
+        self.header_sep.pack(fill=tk.X, padx=24, pady=(0, 10))
+
+        # 2. Status Banner (Active Session Bar with Modern Accent Strip)
         self.banner = tk.Frame(
             self.root,
             bg=t["banner_live_bg"],
-            padx=16,
-            pady=9,
+            padx=14,
+            pady=8,
             highlightthickness=1,
             highlightbackground=t["border_live"]
         )
@@ -618,11 +651,25 @@ class AccountSwitchboardApp:
             command=self.on_restart_antigravity
         )
 
+        self.banner_accent = tk.Frame(self.banner, bg=t["color_active"], width=4)
+        self.banner_accent.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+
+        self.banner_tag = tk.Label(
+            self.banner,
+            text="● LIVE RUNTIME",
+            font=("Segoe UI", 8, "bold"),
+            fg=t["color_active"],
+            bg=t["banner_live_bg"],
+            padx=6,
+            pady=2
+        )
+        self.banner_tag.pack(side=tk.LEFT, padx=(0, 8))
+
         self.banner_label = tk.Label(
             self.banner,
             text="Connecting to Antigravity sessions...",
-            font=("Segoe UI", 9, "bold"),
-            fg=t["color_active"],
+            font=("Segoe UI", 9),
+            fg=t["text_main"],
             bg=t["banner_live_bg"],
             anchor="w"
         )
@@ -708,6 +755,14 @@ class AccountSwitchboardApp:
 
         if hasattr(self, "header"):
             self.header.config(bg=t["bg_main"])
+        if hasattr(self, "top_row"):
+            self.top_row.config(bg=t["bg_main"])
+        if hasattr(self, "sub_row"):
+            self.sub_row.config(bg=t["bg_main"])
+        if hasattr(self, "brand_frame"):
+            self.brand_frame.config(bg=t["bg_main"])
+        if hasattr(self, "brand_icon"):
+            self.brand_icon.config(bg=t["btn_secondary"], fg=t["color_active"])
         if hasattr(self, "title_box"):
             self.title_box.config(bg=t["bg_main"])
         if hasattr(self, "app_title"):
@@ -717,9 +772,10 @@ class AccountSwitchboardApp:
         if hasattr(self, "btn_box"):
             self.btn_box.config(bg=t["bg_main"])
 
+        short_name = t.get("short_name", t["name"])
         if hasattr(self, "theme_btn"):
             self.theme_btn.config(
-                text=f"{t['icon']} {t['name']} ▾",
+                text=f"{t['icon']} {short_name} ▾",
                 bg=t["btn_secondary"],
                 fg=t["text_main"],
                 activebackground=t["btn_secondary_hover"],
@@ -750,6 +806,9 @@ class AccountSwitchboardApp:
             )
             self.refresh_btn.default_bg = t["btn_primary"]
             self.refresh_btn.hover_bg = t["btn_primary_hover"]
+
+        if hasattr(self, "header_sep"):
+            self.header_sep.config(bg=t["footer_sep"])
 
         if hasattr(self, "cards_outer"):
             self.cards_outer.config(bg=t["bg_main"])
@@ -802,23 +861,47 @@ class AccountSwitchboardApp:
         staged_email = router.get_active_email()
         live_email = router.get_live_antigravity_email()
 
-        # Update Banner State: ALWAYS unpack both first to prevent any overlapping geometry
+        # Update Banner State: ALWAYS unpack all first to prevent any overlapping geometry
         self.banner_label.pack_forget()
+        if hasattr(self, "banner_tag"):
+            self.banner_tag.pack_forget()
+        if hasattr(self, "banner_accent"):
+            self.banner_accent.pack_forget()
         self.restart_btn.pack_forget()
 
         if live_email and staged_email and live_email.lower() == staged_email.lower():
             self.banner.config(bg=self.theme["banner_live_bg"], highlightbackground=self.theme["border_live"], highlightthickness=1)
+            if hasattr(self, "banner_accent"):
+                self.banner_accent.config(bg=self.theme["color_active"])
+                self.banner_accent.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+            if hasattr(self, "banner_tag"):
+                self.banner_tag.config(
+                    text="● LIVE RUNTIME",
+                    fg=self.theme["color_active"],
+                    bg=self.theme["banner_live_bg"]
+                )
+                self.banner_tag.pack(side=tk.LEFT, padx=(0, 8))
             self.banner_label.config(
-                text=f"● LIVE SESSION: {live_email}  •  Synchronized with Antigravity App",
-                fg=self.theme["color_active"],
+                text=f"{live_email}   •   Synchronized with Antigravity App",
+                fg=self.theme["text_main"],
                 bg=self.theme["banner_live_bg"]
             )
             self.banner_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
         else:
             self.banner.config(bg=self.theme["banner_staged_bg"], highlightbackground=self.theme["border_staged"], highlightthickness=1)
+            if hasattr(self, "banner_accent"):
+                self.banner_accent.config(bg=self.theme["color_ready"])
+                self.banner_accent.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+            if hasattr(self, "banner_tag"):
+                self.banner_tag.config(
+                    text="📁 STAGED SESSION",
+                    fg=self.theme["color_ready"],
+                    bg=self.theme["banner_staged_bg"]
+                )
+                self.banner_tag.pack(side=tk.LEFT, padx=(0, 8))
             self.banner_label.config(
-                text=f"● Live: {live_email or 'Unknown'}   ➔   📁 Staged: {staged_email}",
-                fg=self.theme["color_ready"],
+                text=f"Live: {live_email or 'Unknown'}   ➔   Staged: {staged_email}  (Relaunch app to activate)",
+                fg=self.theme["text_main"],
                 bg=self.theme["banner_staged_bg"]
             )
             # Pack restart button FIRST on the RIGHT so it is never overlapped by expanding label
@@ -942,7 +1025,7 @@ class AccountSwitchboardApp:
                     try:
                         self.root.clipboard_clear()
                         self.root.clipboard_append(em)
-                        cbtn.config(text=" ✓", fg="#34d399")
+                        cbtn.config(text=" ✓ Copied", fg="#10b981")
                         self.root.after(1500, lambda: cbtn.config(text=" 📋", fg=self.theme["text_dim"]) if not self.is_destroyed else None)
                         self.footer_status.config(text=f"✓ Copied {em} to clipboard!")
                     except Exception:
@@ -956,7 +1039,7 @@ class AccountSwitchboardApp:
             num_badge = tk.Label(
                 badge_frame,
                 text=f" #{idx} ",
-                font=("Segoe UI", 9, "bold"),
+                font=("Segoe UI", 8, "bold"),
                 bg=badge_bg,
                 fg=badge_fg,
                 padx=5,
@@ -994,17 +1077,17 @@ class AccountSwitchboardApp:
 
             svc_lbl = tk.Label(
                 svc_row,
-                text="Google AI • Free Tier",
+                text="Google Cloud Code • Free Tier",
                 font=("Segoe UI", 8),
                 fg=self.theme["text_muted"],
                 bg=card_bg
             )
             svc_lbl.pack(side=tk.LEFT)
 
-            # Line 3: Status Pill
+            # Line 3: Modern Status Pill
             status_pill = tk.Label(
                 left_col,
-                text=status_txt,
+                text=f" {status_txt} ",
                 font=("Segoe UI", 8, "bold"),
                 fg=status_color,
                 bg=card_bg
@@ -1020,27 +1103,27 @@ class AccountSwitchboardApp:
             row_5h = tk.Frame(mid_col, bg=card_bg)
             row_5h.pack(fill=tk.X, pady=(0, 1))
 
-            lbl_5h_val = tk.Label(row_5h, text="Querying API...", font=("Segoe UI", 11, "bold"), fg=self.theme["text_main"], bg=card_bg)
+            lbl_5h_val = tk.Label(row_5h, text="Querying API...", font=("Segoe UI", 10, "bold"), fg=self.theme["text_main"], bg=card_bg)
             lbl_5h_val.pack(side=tk.RIGHT)
 
-            lbl_5h_title = tk.Label(row_5h, text="Session limit (5h):", font=("Segoe UI", 8, "bold"), fg=self.theme["text_muted"], bg=card_bg)
+            lbl_5h_title = tk.Label(row_5h, text="SESSION LIMIT (5H)", font=("Segoe UI", 8, "bold"), fg=self.theme["text_muted"], bg=card_bg)
             lbl_5h_title.pack(side=tk.LEFT)
 
-            canvas_5h = tk.Canvas(mid_col, height=7, bg=self.theme["bg_progress_track"], highlightthickness=0)
-            canvas_5h.pack(fill=tk.X, pady=(1, 4))
+            canvas_5h = tk.Canvas(mid_col, height=8, bg=card_bg, highlightthickness=0)
+            canvas_5h.pack(fill=tk.X, pady=(2, 4))
 
             # 2. Weekly Limit Row (Value packed RIGHT first, then title packed LEFT)
             row_wk = tk.Frame(mid_col, bg=card_bg)
             row_wk.pack(fill=tk.X, pady=(1, 1))
 
-            lbl_wk_val = tk.Label(row_wk, text="Querying API...", font=("Segoe UI", 11, "bold"), fg=self.theme["text_main"], bg=card_bg)
+            lbl_wk_val = tk.Label(row_wk, text="Querying API...", font=("Segoe UI", 10, "bold"), fg=self.theme["text_main"], bg=card_bg)
             lbl_wk_val.pack(side=tk.RIGHT)
 
-            lbl_wk_title = tk.Label(row_wk, text="Weekly window (7d):", font=("Segoe UI", 8, "bold"), fg=self.theme["text_muted"], bg=card_bg)
+            lbl_wk_title = tk.Label(row_wk, text="WEEKLY WINDOW (7D)", font=("Segoe UI", 8, "bold"), fg=self.theme["text_muted"], bg=card_bg)
             lbl_wk_title.pack(side=tk.LEFT)
 
-            canvas_wk = tk.Canvas(mid_col, height=7, bg=self.theme["bg_progress_track"], highlightthickness=0)
-            canvas_wk.pack(fill=tk.X, pady=(1, 4))
+            canvas_wk = tk.Canvas(mid_col, height=8, bg=card_bg, highlightthickness=0)
+            canvas_wk.pack(fill=tk.X, pady=(2, 4))
 
             # 3. Timers Row
             timer_row = tk.Frame(mid_col, bg=card_bg)
@@ -1231,10 +1314,10 @@ class AccountSwitchboardApp:
             c_email_lbl.bind("<Button-1>", c_copy_action)
             c_copy_btn.bind("<Button-1>", c_copy_action)
 
-            # Line 3: Status Pill
+            # Line 3: Modern Status Pill
             c_status_pill = tk.Label(
                 c_left_col,
-                text=c_status_txt,
+                text=f" {c_status_txt} ",
                 font=("Segoe UI", 8, "bold"),
                 fg=c_status_color,
                 bg=self.theme["bg_card_claude"]
@@ -1249,27 +1332,27 @@ class AccountSwitchboardApp:
             c_row_5h = tk.Frame(c_mid_col, bg=self.theme["bg_card_claude"])
             c_row_5h.pack(fill=tk.X, pady=(0, 1))
 
-            c_lbl_5h_val = tk.Label(c_row_5h, text=f"{init_5h_used}% used  ({init_5h_rem}% left)", font=("Segoe UI", 11, "bold"), fg=init_5h_txt, bg=self.theme["bg_card_claude"])
+            c_lbl_5h_val = tk.Label(c_row_5h, text=f"{init_5h_used}% used  ({init_5h_rem}% left)", font=("Segoe UI", 10, "bold"), fg=init_5h_txt, bg=self.theme["bg_card_claude"])
             c_lbl_5h_val.pack(side=tk.RIGHT)
 
-            c_lbl_5h_title = tk.Label(c_row_5h, text="Session limit (5h):", font=("Segoe UI", 8, "bold"), fg=self.theme["text_muted"], bg=self.theme["bg_card_claude"])
+            c_lbl_5h_title = tk.Label(c_row_5h, text="SESSION LIMIT (5H)", font=("Segoe UI", 8, "bold"), fg=self.theme["text_muted"], bg=self.theme["bg_card_claude"])
             c_lbl_5h_title.pack(side=tk.LEFT)
 
-            c_canvas_5h = tk.Canvas(c_mid_col, height=7, bg=self.theme["bg_progress_track"], highlightthickness=0)
-            c_canvas_5h.pack(fill=tk.X, pady=(1, 4))
+            c_canvas_5h = tk.Canvas(c_mid_col, height=8, bg=self.theme["bg_card_claude"], highlightthickness=0)
+            c_canvas_5h.pack(fill=tk.X, pady=(2, 4))
 
             # 2. Weekly Limit Row (Value packed RIGHT first, then title packed LEFT)
             c_row_wk = tk.Frame(c_mid_col, bg=self.theme["bg_card_claude"])
             c_row_wk.pack(fill=tk.X, pady=(1, 1))
 
-            c_lbl_wk_val = tk.Label(c_row_wk, text=f"{init_wk_used}% used  ({init_wk_rem}% left)", font=("Segoe UI", 11, "bold"), fg=init_wk_txt, bg=self.theme["bg_card_claude"])
+            c_lbl_wk_val = tk.Label(c_row_wk, text=f"{init_wk_used}% used  ({init_wk_rem}% left)", font=("Segoe UI", 10, "bold"), fg=init_wk_txt, bg=self.theme["bg_card_claude"])
             c_lbl_wk_val.pack(side=tk.RIGHT)
 
-            c_lbl_wk_title = tk.Label(c_row_wk, text="Weekly window (7d):", font=("Segoe UI", 8, "bold"), fg=self.theme["text_muted"], bg=self.theme["bg_card_claude"])
+            c_lbl_wk_title = tk.Label(c_row_wk, text="WEEKLY WINDOW (7D)", font=("Segoe UI", 8, "bold"), fg=self.theme["text_muted"], bg=self.theme["bg_card_claude"])
             c_lbl_wk_title.pack(side=tk.LEFT)
 
-            c_canvas_wk = tk.Canvas(c_mid_col, height=7, bg=self.theme["bg_progress_track"], highlightthickness=0)
-            c_canvas_wk.pack(fill=tk.X, pady=(1, 4))
+            c_canvas_wk = tk.Canvas(c_mid_col, height=8, bg=self.theme["bg_card_claude"], highlightthickness=0)
+            c_canvas_wk.pack(fill=tk.X, pady=(2, 4))
 
             # 3. Status & App Row
             c_detail_row = tk.Frame(c_mid_col, bg=self.theme["bg_card_claude"])
@@ -1357,7 +1440,7 @@ class AccountSwitchboardApp:
             c_canvas_wk.bind("<Configure>", lambda e, n="claude": self.redraw_bar(n, "wk"))
 
     def render_canvas_bar(self, canvas, pct, color):
-        """Zero-churn progress bar renderer: reuses rectangle item coords instead of deleting."""
+        """Zero-churn progress bar renderer: renders smooth capsule bars with rounded caps."""
         if self.is_destroyed:
             return
         w = canvas.winfo_width()
@@ -1369,28 +1452,40 @@ class AccountSwitchboardApp:
                 w = 320
         h = canvas.winfo_height()
         if h < 4:
-            h = 7
-
-        fill_w = max(0, int((pct / 100.0) * w)) if (pct is not None and pct > 0) else 0
-
-        # Check if items already exist on this canvas
-        track_id = getattr(canvas, "_track_id", None)
-        fill_id = getattr(canvas, "_fill_id", None)
+            h = 8
 
         track_bg = self.theme.get("bg_progress_track", BG_PROGRESS_TRACK)
         try:
-            canvas.config(bg=track_bg)
+            card_bg = canvas.master["bg"]
+            if canvas["bg"] != card_bg:
+                canvas.config(bg=card_bg)
         except Exception:
             pass
 
+        y = h / 2.0
+        r_rad = max(2.0, y)
+
+        track_id = getattr(canvas, "_track_id", None)
+        fill_id = getattr(canvas, "_fill_id", None)
+
+        max_track_x = max(r_rad + 1.0, w - r_rad)
         if track_id is None:
-            canvas._track_id = canvas.create_rectangle(0, 0, w, h, fill=track_bg, width=0)
-            canvas._fill_id = canvas.create_rectangle(0, 0, fill_w, h, fill=color, width=0)
+            canvas._track_id = canvas.create_line(r_rad, y, max_track_x, y, width=h, capstyle=tk.ROUND, fill=track_bg)
         else:
-            canvas.coords(track_id, 0, 0, w, h)
+            canvas.coords(track_id, r_rad, y, max_track_x, y)
             canvas.itemconfig(track_id, fill=track_bg)
-            canvas.coords(fill_id, 0, 0, fill_w, h)
-            canvas.itemconfig(fill_id, fill=color)
+
+        if pct is not None and pct > 0:
+            fill_w = max(0, int((pct / 100.0) * w))
+            max_fill_x = max(r_rad + 0.1, min(max_track_x, fill_w))
+            if fill_id is None:
+                canvas._fill_id = canvas.create_line(r_rad, y, max_fill_x, y, width=h, capstyle=tk.ROUND, fill=color)
+            else:
+                canvas.coords(fill_id, r_rad, y, max_fill_x, y)
+                canvas.itemconfig(fill_id, fill=color, state=tk.NORMAL)
+        else:
+            if fill_id is not None:
+                canvas.itemconfig(fill_id, state=tk.HIDDEN)
 
     def redraw_bar(self, name, kind):
         """Callback for canvas <Configure> event to redraw bars dynamically upon resize."""
@@ -1413,7 +1508,7 @@ class AccountSwitchboardApp:
         if self.is_fetching or self.is_destroyed:
             return
         self.is_fetching = True
-        self.sync_badge.config(text="● Querying API...", fg=self.theme["color_warn"], bg=self.theme["bg_card"])
+        self.sync_badge.config(text="● Syncing...", fg=self.theme["color_warn"], bg=self.theme["bg_card"])
 
         def worker():
             results = {}
@@ -1458,7 +1553,7 @@ class AccountSwitchboardApp:
         now_str = dt.datetime.now().strftime("%H:%M:%S")
         self.last_sync_time = dt.datetime.now()
 
-        self.sync_badge.config(text=f"● Live Synced ({now_str})", fg=self.theme["color_active"], bg=self.theme["bg_card_live"])
+        self.sync_badge.config(text=f"● Live ({now_str})", fg=self.theme["color_active"], bg=self.theme["bg_card_live"])
         self.footer_clock.config(text=f"Last API Check: {now_str} (Auto-refreshes every 60s)")
 
         for name, refs in self.cards.items():
@@ -1886,7 +1981,7 @@ class AccountSwitchboardApp:
         ):
             return
 
-        self.sync_badge.config(text="● Waiting for browser login...", fg=self.theme["color_warn"])
+        self.sync_badge.config(text="● Authenticating...", fg=self.theme["color_warn"])
         self.set_buttons_enabled(False)
 
         def run_auth():

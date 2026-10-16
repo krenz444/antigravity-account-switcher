@@ -500,6 +500,41 @@ class TestReleaseAndBinaryHardening(unittest.TestCase):
             loaded = router.get_config()
             self.assertEqual(loaded.get("ui", {}).get("theme"), "cyberpunk_neon")
 
+    def test_modern_header_layout_and_capsule_progress_bars(self):
+        """Verifies spacious two-tier modern header hierarchy and smooth capsule progress bar rendering."""
+        import tkinter as tk
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            with patch.object(gui_app.AccountSwitchboardApp, "poll_all_quotas_async"), \
+                 patch.object(gui_app.AccountSwitchboardApp, "schedule_quota_auto_refresh"), \
+                 patch.object(gui_app.AccountSwitchboardApp, "tick_timer"):
+                app = gui_app.AccountSwitchboardApp(root)
+                # Verify modern header and brand elements
+                self.assertTrue(hasattr(app, "top_row"))
+                self.assertTrue(hasattr(app, "brand_frame"))
+                self.assertTrue(hasattr(app, "brand_icon"))
+                self.assertTrue(hasattr(app, "sync_badge"))
+                self.assertTrue(hasattr(app, "sub_row"))
+                self.assertTrue(hasattr(app, "header_sep"))
+                self.assertTrue(hasattr(app, "banner_accent"))
+                self.assertTrue(hasattr(app, "banner_tag"))
+
+                # Verify short names on all registered themes
+                for t_key, t_val in gui_app.THEMES.items():
+                    self.assertIn("short_name", t_val)
+                    self.assertTrue(len(t_val["short_name"]) <= 12)
+
+                # Verify smooth capsule progress bar rendering across percentages
+                canvas = tk.Canvas(root, width=280, height=8, bg="#0d131f")
+                app.render_canvas_bar(canvas, 0, "#10b981")
+                app.render_canvas_bar(canvas, 50, "#10b981")
+                app.render_canvas_bar(canvas, 100, "#f43f5e")
+                root.update_idletasks()
+        finally:
+            root.destroy()
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
