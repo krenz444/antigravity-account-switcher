@@ -12,7 +12,7 @@
   },
   "ui": {
     "refresh_interval_seconds": 60,
-    "theme": "dark_slate",
+    "theme": "modern_obsidian",
     "auto_relaunch_on_switch": false,
     "show_model_only_quota": false,
     "default_width": 1020,

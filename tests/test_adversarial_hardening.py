@@ -459,6 +459,47 @@ class TestReleaseAndBinaryHardening(unittest.TestCase):
         self.assertTrue(callable(router.oauth_authorize_interactive))
         self.assertIs(router.authenticate_profile, router.oauth_authorize_interactive)
 
+    def test_modern_aesthetic_themes_registry(self):
+        """Verifies that all 6 modern aesthetic themes exist with complete valid hex palettes."""
+        import re
+        expected_themes = ["modern_obsidian", "tokyo_night", "cyberpunk_neon", "catppuccin_mocha", "nordic_frost", "dark_slate"]
+        self.assertIn("modern_obsidian", gui_app.THEMES)
+        for t_key in expected_themes:
+            self.assertIn(t_key, gui_app.THEMES, f"Missing theme: {t_key}")
+            palette = gui_app.THEMES[t_key]
+            self.assertIn("name", palette)
+            self.assertIn("icon", palette)
+            for color_key in ["bg_main", "bg_card", "border_live", "border_staged", "color_active", "color_ready", "color_warn", "color_danger", "bg_progress_track"]:
+                self.assertIn(color_key, palette)
+                val = palette[color_key]
+                self.assertTrue(bool(re.match(r'^#[0-9a-fA-F]{6}$', val)), f"Invalid hex color for {t_key}.{color_key}: {val}")
+
+    def test_theme_switching_and_globals(self):
+        """Verifies that applying a theme updates global color variables and restores defaults."""
+        orig_theme = gui_app.CURRENT_THEME
+        try:
+            tokyo = gui_app.apply_theme_globals("tokyo_night")
+            self.assertEqual(gui_app.CURRENT_THEME, "tokyo_night")
+            self.assertEqual(gui_app.BG_MAIN, tokyo["bg_main"])
+            self.assertEqual(gui_app.COLOR_READY, tokyo["color_ready"])
+
+            obsidian = gui_app.apply_theme_globals("modern_obsidian")
+            self.assertEqual(gui_app.CURRENT_THEME, "modern_obsidian")
+            self.assertEqual(gui_app.BG_MAIN, obsidian["bg_main"])
+            self.assertEqual(gui_app.COLOR_ACTIVE, obsidian["color_active"])
+        finally:
+            gui_app.apply_theme_globals(orig_theme)
+
+    def test_set_theme_persists_in_config(self):
+        """Verifies that router.set_theme persists the chosen aesthetic theme in config.json."""
+        test_cfg = os.path.join(self.test_dir, "test_theme_config.json")
+        with patch("router.CONFIG_FILE", test_cfg):
+            router.save_json(test_cfg, {"ui": {"theme": "dark_slate"}})
+            ok = router.set_theme("cyberpunk_neon")
+            self.assertTrue(ok)
+            loaded = router.get_config()
+            self.assertEqual(loaded.get("ui", {}).get("theme"), "cyberpunk_neon")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

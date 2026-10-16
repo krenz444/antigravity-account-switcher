@@ -347,7 +347,7 @@ def get_config():
         },
         "ui": {
             "refresh_interval_seconds": 60,
-            "theme": "dark_slate",
+            "theme": "modern_obsidian",
             "auto_relaunch_on_switch": False,
             "show_model_only_quota": False,
             "default_width": 1020,
@@ -371,6 +371,17 @@ def get_config():
                     if sub_k not in cfg[k]:
                         cfg[k][sub_k] = copy.deepcopy(sub_v)
     return cfg
+
+
+def set_theme(theme_name):
+    """Persists the user selected aesthetic UI theme in config.json."""
+    if not theme_name or not isinstance(theme_name, str):
+        return False
+    cfg = get_config()
+    if "ui" not in cfg or not isinstance(cfg["ui"], dict):
+        cfg["ui"] = {}
+    cfg["ui"]["theme"] = theme_name.strip()
+    return save_json(CONFIG_FILE, cfg)
 
 
 # ---------------------------------------------------------------------------
