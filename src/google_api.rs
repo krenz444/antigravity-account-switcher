@@ -92,6 +92,33 @@ pub fn format_countdown(reset_time_iso: &str) -> String {
     format_duration_countdown(diff.num_seconds())
 }
 
+/// Formats a weekly reset timestamp (e.g. "2026-11-02T19:00:00Z") into a readable reset target.
+pub fn format_weekly_reset(reset_iso: &str) -> String {
+    let trimmed = reset_iso.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("ready") || trimmed.eq_ignore_ascii_case("none") {
+        return "Resets weekly".to_string();
+    }
+    if trimmed.starts_with("Resets ") {
+        return trimmed.to_string();
+    }
+
+    let parsed_time = chrono::DateTime::parse_from_rfc3339(trimmed)
+        .map(|dt| dt.with_timezone(&chrono::Local))
+        .or_else(|_| {
+            chrono::NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%dT%H:%M:%S")
+                .map(|ndt| {
+                    let utc = chrono::DateTime::<Utc>::from_naive_utc_and_offset(ndt, Utc);
+                    utc.with_timezone(&chrono::Local)
+                })
+        });
+
+    if let Ok(local_dt) = parsed_time {
+        return local_dt.format("Resets %a %I:%M %p").to_string();
+    }
+
+    "Resets weekly".to_string()
+}
+
 /// Resolves the filesystem directory for a given profile name.
 pub fn resolve_profile_dir(profile_name: &str) -> Option<PathBuf> {
     let p_dir = crate::router::profiles_dir();
@@ -385,7 +412,7 @@ pub fn parse_quota_summary(val: &Value) -> QuotaData {
     }
 
     if quota.pct_5h >= 100.0 {
-        quota.countdown_text = "Ready".to_string();
+        quota.countdown_text = "Full Quota".to_string();
     } else {
         quota.countdown_text = format_countdown(&quota.reset_5h);
     }

@@ -46,6 +46,17 @@ fn test_countdown_formatter() {
 }
 
 #[test]
+fn test_weekly_reset_formatter() {
+    assert_eq!(google_api::format_weekly_reset(""), "Resets weekly");
+    assert_eq!(google_api::format_weekly_reset("ready"), "Resets weekly");
+    assert_eq!(google_api::format_weekly_reset("none"), "Resets weekly");
+    assert_eq!(google_api::format_weekly_reset("Resets Mon 7:00 PM"), "Resets Mon 7:00 PM");
+
+    let formatted = google_api::format_weekly_reset("2026-11-02T19:00:00Z");
+    assert!(formatted.starts_with("Resets "));
+}
+
+#[test]
 fn test_parse_quota_summary_mock() {
     let mock_json = serde_json::json!({
         "response": {

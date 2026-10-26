@@ -128,6 +128,17 @@ pub struct FullAccountView {
 
 impl FullAccountView {
     pub fn to_slint_account_data(&self, is_selected: bool) -> crate::AccountData {
+        let weekly_reset_str = if self.quota.weekly_reset.is_empty() || self.quota.weekly_reset.eq_ignore_ascii_case("ready") {
+            "Full Weekly Quota".to_string()
+        } else {
+            self.quota.weekly_reset.clone()
+        };
+        let reset_countdown_str = if self.quota.pct_5h >= 100.0 {
+            "Full Quota".to_string()
+        } else {
+            self.quota.countdown_text.clone()
+        };
+
         crate::AccountData {
             id: self.account.name.clone().into(),
             alias: self.account.alias.clone().into(),
@@ -139,7 +150,8 @@ impl FullAccountView {
             session_quota_label: format!("{:.0}%", self.quota.pct_5h).into(),
             weekly_quota_pct: self.quota.weekly_pct,
             weekly_quota_label: format!("{:.0}%", self.quota.weekly_pct).into(),
-            reset_countdown: self.quota.countdown_text.clone().into(),
+            reset_countdown: reset_countdown_str.into(),
+            weekly_reset_text: weekly_reset_str.into(),
             status_text: self.quota.status_text.clone().into(),
         }
     }

@@ -80,7 +80,8 @@ fn refresh_ui_state(app: &AppWindow, preferred_selected_id: Option<&str>) {
             session_quota_label: "100%".into(),
             weekly_quota_pct: 100.0,
             weekly_quota_label: "100%".into(),
-            reset_countdown: "Ready".into(),
+            reset_countdown: "Full Quota".into(),
+            weekly_reset_text: "Full Weekly Quota".into(),
             status_text: status_text.into(),
         };
         slint_accounts.push(data);
@@ -196,6 +197,13 @@ fn trigger_full_refresh(app_weak: slint::Weak<AppWindow>, preferred_selected_id:
 
                         let status_text = if p.is_live { "Active" } else { "Standby" };
 
+                        let weekly_reset_str = google_api::format_weekly_reset(&quota.weekly_reset);
+                        let reset_countdown_str = if quota.pct_5h >= 100.0 {
+                            "Full Quota".to_string()
+                        } else {
+                            quota.countdown_text.clone()
+                        };
+
                         let data = AccountData {
                             id: p.name.clone().into(),
                             alias: (if p.alias.is_empty() {
@@ -212,7 +220,8 @@ fn trigger_full_refresh(app_weak: slint::Weak<AppWindow>, preferred_selected_id:
                             session_quota_label: format!("{:.0}%", quota.pct_5h).into(),
                             weekly_quota_pct: quota.weekly_pct,
                             weekly_quota_label: format!("{:.0}%", quota.weekly_pct).into(),
-                            reset_countdown: quota.countdown_text.clone().into(),
+                            reset_countdown: reset_countdown_str.into(),
+                            weekly_reset_text: weekly_reset_str.into(),
                             status_text: status_text.into(),
                         };
                         slint_accounts.push(data);

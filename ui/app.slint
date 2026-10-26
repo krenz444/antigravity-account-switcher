@@ -31,6 +31,7 @@ export component AppWindow inherits Window {
             weekly_quota_pct: 64.0,
             weekly_quota_label: "64%",
             reset_countdown: "2h 15m",
+            weekly_reset_text: "Resets Mon 7:00 PM",
             status_text: "Active",
         },
         {
@@ -45,6 +46,7 @@ export component AppWindow inherits Window {
             weekly_quota_pct: 28.0,
             weekly_quota_label: "28%",
             reset_countdown: "4h 50m",
+            weekly_reset_text: "Resets Mon 7:00 PM",
             status_text: "Standby",
         },
         {
@@ -54,11 +56,12 @@ export component AppWindow inherits Window {
             tier: "Free",
             is_live: false,
             is_selected: false,
-            session_quota_pct: 95.0,
-            session_quota_label: "95%",
-            weekly_quota_pct: 88.0,
-            weekly_quota_label: "88%",
-            reset_countdown: "Ready",
+            session_quota_pct: 100.0,
+            session_quota_label: "100%",
+            weekly_quota_pct: 100.0,
+            weekly_quota_label: "100%",
+            reset_countdown: "Full Quota",
+            weekly_reset_text: "Resets Mon 7:00 PM",
             status_text: "Standby",
         }
     ];
@@ -283,6 +286,7 @@ export component AppWindow inherits Window {
                     weekly_quota_pct: account.weekly_quota_pct;
                     weekly_quota_label: account.weekly_quota_label;
                     reset_countdown: account.reset_countdown;
+                    weekly_reset_text: account.weekly_reset_text;
                     status_text: account.status_text;
 
                     switch_clicked => {

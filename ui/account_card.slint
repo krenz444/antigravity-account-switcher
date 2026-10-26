@@ -16,6 +16,7 @@ export struct AccountData {
     weekly_quota_pct: float,
     weekly_quota_label: string,
     reset_countdown: string,
+    weekly_reset_text: string,
     status_text: string,
 }
 
@@ -30,7 +31,8 @@ export component AccountCard inherits Rectangle {
     in property <string> session_quota_label: "85%";
     in property <float> weekly_quota_pct: 64.0;
     in property <string> weekly_quota_label: "64%";
-    in property <string> reset_countdown: "Ready";
+    in property <string> reset_countdown: "Full Quota";
+    in property <string> weekly_reset_text: "Resets Mon 7:00 PM";
     in property <string> status_text: "Standby";
 
     callback switch_clicked();
@@ -178,9 +180,10 @@ export component AccountCard inherits Rectangle {
                     alignment: end;
 
                     Text {
-                        text: root.reset_countdown == "Ready" ? "Ready" : "Reset: " + root.reset_countdown;
-                        color: Theme.text-muted;
+                        text: (root.reset_countdown == "Ready" || root.reset_countdown == "Full Quota") ? "Full Quota" : "Reset: " + root.reset_countdown;
+                        color: (root.reset_countdown == "Ready" || root.reset_countdown == "Full Quota") ? Theme.accent-emerald : Theme.accent-sky;
                         font-size: Theme.font-xs;
+                        font-weight: (root.reset_countdown == "Ready" || root.reset_countdown == "Full Quota") ? 600 : 400;
                     }
 
                     Text {
@@ -205,17 +208,28 @@ export component AccountCard inherits Rectangle {
                 alignment: space-between;
 
                 Text {
-                    text: "Weekly Cap";
+                    text: "Weekly Limit";
                     color: Theme.text-secondary;
                     font-size: Theme.font-xs;
                     font-weight: 500;
                 }
 
-                Text {
-                    text: root.weekly_quota_label;
-                    color: Theme.text-primary;
-                    font-size: Theme.font-xs;
-                    font-weight: 700;
+                HorizontalLayout {
+                    spacing: 6px;
+                    alignment: end;
+
+                    Text {
+                        text: root.weekly_reset_text;
+                        color: Theme.text-muted;
+                        font-size: Theme.font-xs;
+                    }
+
+                    Text {
+                        text: root.weekly_quota_label;
+                        color: Theme.text-primary;
+                        font-size: Theme.font-xs;
+                        font-weight: 700;
+                    }
                 }
             }
 
