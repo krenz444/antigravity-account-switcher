@@ -5,6 +5,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 use windows_sys::Win32::Foundation::{GetLastError, HWND, LPARAM, LRESULT, POINT, WPARAM};
+use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 use windows_sys::Win32::UI::Shell::{
     Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY,
@@ -12,12 +13,13 @@ use windows_sys::Win32::UI::Shell::{
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
-    DispatchMessageW, GetCursorPos, GetMessageW, GetWindowLongPtrW, LoadIconW, PostMessageW,
-    PostQuitMessage, PostThreadMessageW, RegisterClassW, SetForegroundWindow, SetWindowLongPtrW,
-    TrackPopupMenu, TranslateMessage, UnregisterClassW, CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA,
-    IDI_APPLICATION, MF_SEPARATOR, MF_STRING, MSG, TPM_BOTTOMALIGN, TPM_RETURNCMD,
-    TPM_RIGHTBUTTON, WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_LBUTTONUP, WM_QUIT, WM_RBUTTONUP,
-    WM_USER, WNDCLASSW,
+    DispatchMessageW, GetCursorPos, GetMessageW, GetSystemMetrics, GetWindowLongPtrW, LoadIconW,
+    LoadImageW, PostMessageW, PostQuitMessage, PostThreadMessageW, RegisterClassW,
+    SetForegroundWindow, SetWindowLongPtrW, TrackPopupMenu, TranslateMessage, UnregisterClassW,
+    CS_HREDRAW, CS_VREDRAW, GWLP_USERDATA, HICON, IDI_APPLICATION, IMAGE_ICON, LR_DEFAULTCOLOR,
+    LR_LOADFROMFILE, MF_SEPARATOR, MF_STRING, MSG, SM_CXSMICON, SM_CYSMICON, TPM_BOTTOMALIGN,
+    TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_LBUTTONUP, WM_QUIT,
+    WM_RBUTTONUP, WM_USER, WNDCLASSW,
 };
 
 /// Custom window message used for system tray notification callbacks.
@@ -183,6 +185,43 @@ fn set_tip(buf: &mut [u16; 128], tip: &str) {
     buf[count] = 0;
 }
 
+/// Loads the application tray icon, prioritizing embedded resources and local icon files.
+unsafe fn load_tray_icon() -> HICON {
+    let hinstance = GetModuleHandleW(std::ptr::null());
+    let cx = GetSystemMetrics(SM_CXSMICON);
+    let cy = GetSystemMetrics(SM_CYSMICON);
+
+    // 1. Try loading icon resource embedded by winres (resource ID 1)
+    let icon_res = LoadImageW(
+        hinstance,
+        1 as *const u16,
+        IMAGE_ICON,
+        cx,
+        cy,
+        LR_DEFAULTCOLOR,
+    );
+    if !icon_res.is_null() {
+        return icon_res;
+    }
+
+    // 2. Try loading app_icon.ico from disk (working directory or executable dir)
+    let ico_name = to_wstring("app_icon.ico");
+    let icon_file = LoadImageW(
+        std::ptr::null_mut(),
+        ico_name.as_ptr(),
+        IMAGE_ICON,
+        cx,
+        cy,
+        LR_LOADFROMFILE | LR_DEFAULTCOLOR,
+    );
+    if !icon_file.is_null() {
+        return icon_file;
+    }
+
+    // 3. Fallback to generic application icon
+    LoadIconW(std::ptr::null_mut(), IDI_APPLICATION)
+}
+
 fn init_tray_window(
     tip: &str,
     on_event: Box<dyn Fn(TrayEvent) + Send + 'static>,
@@ -229,8 +268,8 @@ fn init_tray_window(
         let ctx = Box::new(TrayContext { on_event });
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(ctx) as isize);
 
-        // Load application icon
-        let icon = LoadIconW(std::ptr::null_mut(), IDI_APPLICATION);
+        // Load application icon (embedded resource -> app_icon.ico -> IDI_APPLICATION)
+        let icon = load_tray_icon();
 
         // Register notification icon with Shell
         let mut nid: NOTIFYICONDATAW = std::mem::zeroed();
