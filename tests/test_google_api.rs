@@ -148,6 +148,18 @@ fn test_parse_tier_from_json() {
 }
 
 #[tokio::test]
+async fn test_in_process_language_server_discovery() {
+    if crate::process::is_language_server_running() {
+        let conn_opt = google_api::discover_language_server().await;
+        if let Some(conn) = conn_opt {
+            println!("In-process discovery succeeded: port {}, token len {}", conn.port, conn.csrf_token.len());
+            assert!(conn.port > 0);
+            assert!(!conn.csrf_token.is_empty());
+        }
+    }
+}
+
+#[tokio::test]
 async fn test_live_profile_quota_fetch_if_available() {
     let profiles = router::list_profiles();
     if let Some(p) = profiles.first() {

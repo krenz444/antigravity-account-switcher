@@ -464,7 +464,74 @@ pub struct LanguageServerConn {
 
 static LS_CACHE: Mutex<Option<(LanguageServerConn, Instant)>> = Mutex::new(None);
 
-/// Discovers running Antigravity `language_server.exe` port and CSRF token.
+#[cfg(windows)]
+fn get_process_listening_ports_win32(target_pid: u32) -> Vec<u16> {
+    #[repr(C)]
+    #[derive(Copy, Clone)]
+    struct MIB_TCPROW_OWNER_PID {
+        dw_state: u32,
+        dw_local_addr: u32,
+        dw_local_port: u32,
+        dw_remote_addr: u32,
+        dw_remote_port: u32,
+        dw_owning_pid: u32,
+    }
+
+    #[repr(C)]
+    struct MIB_TCPTABLE_OWNER_PID {
+        dw_num_entries: u32,
+        table: [MIB_TCPROW_OWNER_PID; 1],
+    }
+
+    #[link(name = "iphlpapi")]
+    extern "system" {
+        fn GetExtendedTcpTable(
+            p_tcp_table: *mut std::ffi::c_void,
+            pdw_size: *mut u32,
+            b_order: i32,
+            ul_af: u32,
+            table_class: i32,
+            reserved: u32,
+        ) -> u32;
+    }
+
+    let mut size: u32 = 0;
+    unsafe {
+        GetExtendedTcpTable(std::ptr::null_mut(), &mut size, 0, 2, 5, 0);
+    }
+
+    if size == 0 {
+        return Vec::new();
+    }
+
+    let mut buf = vec![0u8; size as usize];
+    let ret = unsafe {
+        GetExtendedTcpTable(buf.as_mut_ptr() as *mut std::ffi::c_void, &mut size, 0, 2, 5, 0)
+    };
+    if ret != 0 {
+        return Vec::new();
+    }
+
+    let table_ptr = buf.as_ptr() as *const MIB_TCPTABLE_OWNER_PID;
+    let num_entries = unsafe { (*table_ptr).dw_num_entries };
+    let rows_ptr = unsafe { std::ptr::addr_of!((*table_ptr).table) as *const MIB_TCPROW_OWNER_PID };
+
+    let mut found_ports = Vec::new();
+    for i in 0..num_entries as usize {
+        let row = unsafe { *rows_ptr.add(i) };
+        if row.dw_owning_pid == target_pid && row.dw_state == 2 {
+            let port = u16::from_be(row.dw_local_port as u16);
+            if !found_ports.contains(&port) {
+                found_ports.push(port);
+            }
+        }
+    }
+
+    found_ports
+}
+
+/// Discovers running Antigravity `language_server.exe` port and CSRF token purely in-process.
+/// Zero command lines or shell popups are ever invoked.
 pub async fn discover_language_server() -> Option<LanguageServerConn> {
     if !crate::process::is_language_server_running() {
         return None;
@@ -479,47 +546,47 @@ pub async fn discover_language_server() -> Option<LanguageServerConn> {
         }
     }
 
-    // Discover PID and CSRF token via PowerShell
-    let cmd = "Get-CimInstance Win32_Process -Filter \"Name = 'language_server.exe'\" | Select-Object ProcessId, CommandLine | ConvertTo-Json";
-    let output = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-Command", cmd])
-        .output()
-        .ok()?;
+    // Discover PID and CSRF token in memory via sysinfo
+    use sysinfo::{ProcessRefreshKind, RefreshKind, System, UpdateKind};
+    let sys = System::new_with_specifics(
+        RefreshKind::new().with_processes(
+            ProcessRefreshKind::new().with_cmd(UpdateKind::Always)
+        )
+    );
 
-    if !output.status.success() {
-        return None;
+    let mut target_pid: Option<u32> = None;
+    let mut csrf_token: Option<String> = None;
+
+    for (pid, proc) in sys.processes() {
+        let name = proc.name().to_string_lossy();
+        if name.eq_ignore_ascii_case("language_server.exe") || name.eq_ignore_ascii_case("language_server") {
+            let cmd_args = proc.cmd();
+            for i in 0..cmd_args.len() {
+                let arg = cmd_args[i].to_string_lossy();
+                if arg == "--csrf_token" && i + 1 < cmd_args.len() {
+                    target_pid = Some(pid.as_u32());
+                    csrf_token = Some(cmd_args[i + 1].to_string_lossy().to_string());
+                    break;
+                } else if arg.starts_with("--csrf_token=") {
+                    target_pid = Some(pid.as_u32());
+                    csrf_token = Some(arg["--csrf_token=".len()..].to_string());
+                    break;
+                }
+            }
+            if csrf_token.is_some() {
+                break;
+            }
+        }
     }
 
-    let out_str = String::from_utf8_lossy(&output.stdout);
-    let json_data: Value = serde_json::from_str(out_str.trim()).ok()?;
+    let pid = target_pid?;
+    let csrf = csrf_token?;
 
-    let (pid, cmdline) = if let Some(arr) = json_data.as_array() {
-        let first = arr.first()?;
-        (first.get("ProcessId")?.as_u64()?, first.get("CommandLine")?.as_str()?)
-    } else {
-        (json_data.get("ProcessId")?.as_u64()?, json_data.get("CommandLine")?.as_str()?)
-    };
-
-    // Extract CSRF token
-    let csrf_pos = cmdline.find("--csrf_token")?;
-    let after_csrf = &cmdline[csrf_pos + "--csrf_token".len()..];
-    let csrf_token = after_csrf.trim_start().split_whitespace().next()?.to_string();
-
-    // Query listening ports for this process
-    let net_cmd = format!(
-        "Get-NetTCPConnection -OwningProcess {} -State Listen | Select-Object -ExpandProperty LocalPort",
-        pid
-    );
-    let net_output = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-Command", &net_cmd])
-        .output()
-        .ok()?;
-
-    let ports_str = String::from_utf8_lossy(&net_output.stdout);
-    let ports: Vec<u16> = ports_str
-        .lines()
-        .filter_map(|l| l.trim().parse::<u16>().ok())
-        .collect();
+    // Query listening ports natively via Win32 FFI (zero command lines, zero popups)
+    #[cfg(windows)]
+    let ports = get_process_listening_ports_win32(pid);
+    #[cfg(not(windows))]
+    let ports: Vec<u16> = Vec::new();
 
     let client = Client::builder()
         .danger_accept_invalid_certs(true)
@@ -536,7 +603,7 @@ pub async fn discover_language_server() -> Option<LanguageServerConn> {
         let resp = client
             .post(&url)
             .header("Content-Type", "application/json")
-            .header("x-codeium-csrf-token", &csrf_token)
+            .header("x-codeium-csrf-token", &csrf)
             .body("{}")
             .send()
             .await;
@@ -545,7 +612,7 @@ pub async fn discover_language_server() -> Option<LanguageServerConn> {
             if r.status().is_success() {
                 let conn = LanguageServerConn {
                     port,
-                    csrf_token: csrf_token.clone(),
+                    csrf_token: csrf.clone(),
                 };
                 if let Ok(mut guard) = LS_CACHE.lock() {
                     *guard = Some((conn.clone(), Instant::now()));

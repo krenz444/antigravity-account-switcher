@@ -159,7 +159,13 @@ pub fn restart_antigravity_client() -> Result<(), Box<dyn Error>> {
     if let Some(path) = exe_path {
         info!("Relaunching Antigravity Client from {:?}", path);
         std::thread::sleep(std::time::Duration::from_millis(300));
-        Command::new(path).spawn()?;
+        let mut cmd = Command::new(path);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+        cmd.spawn()?;
     } else if was_running {
         warn!("Could not locate Antigravity.exe path on disk to relaunch.");
     }
