@@ -10,10 +10,10 @@ export { AccountData }
 
 export component AppWindow inherits Window {
     title: "Antigravity Switchboard";
-    preferred-width: 960px;
-    preferred-height: 660px;
-    min-width: 900px;
-    min-height: 600px;
+    preferred-width: 920px;
+    preferred-height: 520px;
+    min-width: 860px;
+    min-height: 480px;
     background: Theme.bg-app;
 
     // Antigravity Accounts Data Model
@@ -99,8 +99,11 @@ export component AppWindow inherits Window {
     callback deepseek_action_clicked();
 
     VerticalLayout {
-        padding: Theme.spacing-lg;
-        spacing: Theme.spacing-md;
+        padding-left: Theme.spacing-lg;
+        padding-right: Theme.spacing-lg;
+        padding-top: Theme.spacing-md;
+        padding-bottom: Theme.spacing-md;
+        spacing: 10px;
 
         // 1. Top App Header
         HorizontalLayout {
@@ -108,13 +111,13 @@ export component AppWindow inherits Window {
 
             // Logo & Title
             HorizontalLayout {
-                spacing: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
                 alignment: start;
 
                 // AG Brand Badge
                 Rectangle {
-                    width: 32px;
-                    height: 32px;
+                    width: 28px;
+                    height: 28px;
                     border-radius: Theme.radius-sm;
                     background: #0284c7;
                     border-width: 1px;
@@ -123,28 +126,31 @@ export component AppWindow inherits Window {
                     Text {
                         text: "AG";
                         color: Theme.text-primary;
-                        font-size: Theme.font-sm;
+                        font-size: Theme.font-xs;
                         font-weight: 700;
                         horizontal-alignment: center;
                         vertical-alignment: center;
                     }
                 }
 
-                VerticalLayout {
-                    spacing: 1px;
+                HorizontalLayout {
+                    spacing: 8px;
                     alignment: center;
 
                     Text {
                         text: "Antigravity Switchboard";
                         color: Theme.text-primary;
-                        font-size: Theme.font-lg;
+                        font-size: Theme.font-md;
                         font-weight: 700;
+                        vertical-alignment: center;
                     }
 
                     Text {
-                        text: "Multi-Account Quota & Client Orchestrator";
-                        color: Theme.text-muted;
+                        text: "v2.0";
+                        color: Theme.accent-sky;
                         font-size: Theme.font-xs;
+                        font-weight: 600;
+                        vertical-alignment: center;
                     }
                 }
             }
@@ -162,19 +168,19 @@ export component AppWindow inherits Window {
                     border-radius: Theme.radius-pill;
 
                     HorizontalLayout {
-                        padding-left: Theme.spacing-md;
-                        padding-right: Theme.spacing-md;
-                        padding-top: 4px;
-                        padding-bottom: 4px;
-                        spacing: 6px;
+                        padding-left: Theme.spacing-sm;
+                        padding-right: Theme.spacing-sm;
+                        padding-top: 3px;
+                        padding-bottom: 3px;
+                        spacing: 5px;
                         alignment: center;
 
                         VerticalLayout {
                             alignment: center;
                             Rectangle {
-                                width: 6px;
-                                height: 6px;
-                                border-radius: 3px;
+                                width: 5px;
+                                height: 5px;
+                                border-radius: 2.5px;
                                 background: Theme.accent-emerald;
                             }
                         }
@@ -202,15 +208,15 @@ export component AppWindow inherits Window {
                     HorizontalLayout {
                         padding-left: Theme.spacing-md;
                         padding-right: Theme.spacing-md;
-                        padding-top: 6px;
-                        padding-bottom: 6px;
+                        padding-top: 4px;
+                        padding-bottom: 4px;
                         spacing: 4px;
                         alignment: center;
 
                         Text {
                             text: root.is_refreshing ? "Refreshing..." : "Refresh";
                             color: refresh_touch.has-hover ? Theme.accent-sky : Theme.text-primary;
-                            font-size: Theme.font-sm;
+                            font-size: Theme.font-xs;
                             font-weight: 600;
                             vertical-alignment: center;
                         }
@@ -239,20 +245,20 @@ export component AppWindow inherits Window {
 
         // 3. Antigravity Accounts Section
         VerticalLayout {
-            spacing: Theme.spacing-sm;
+            spacing: 5px;
 
             HorizontalLayout {
                 alignment: space-between;
 
                 Text {
-                    text: "ANTIGRAVITY ACCOUNTS";
+                    text: "ANTIGRAVITY PROFILES";
                     color: Theme.text-secondary;
                     font-size: Theme.font-xs;
                     font-weight: 700;
                 }
 
                 Text {
-                    text: "Click card to select • Switch to change active client";
+                    text: "Select card to view • Instant 1-click credential swap";
                     color: Theme.text-muted;
                     font-size: Theme.font-xs;
                 }
@@ -290,20 +296,20 @@ export component AppWindow inherits Window {
 
         // 4. Other Providers Section: Claude & DeepSeek
         VerticalLayout {
-            spacing: Theme.spacing-sm;
+            spacing: 5px;
 
             HorizontalLayout {
                 alignment: space-between;
 
                 Text {
-                    text: "CONNECTED PROVIDERS";
+                    text: "EXTERNAL AI TELEMETRY";
                     color: Theme.text-secondary;
                     font-size: Theme.font-xs;
                     font-weight: 700;
                 }
 
                 Text {
-                    text: "External AI Quota & Account Balances";
+                    text: "Claude Code CLI & DeepSeek Platform Balance";
                     color: Theme.text-muted;
                     font-size: Theme.font-xs;
                 }

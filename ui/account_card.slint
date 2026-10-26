@@ -56,30 +56,33 @@ export component AccountCard inherits Rectangle {
     }
 
     VerticalLayout {
-        padding: Theme.spacing-md;
-        spacing: Theme.spacing-sm;
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        padding-top: Theme.spacing-sm;
+        padding-bottom: Theme.spacing-sm;
+        spacing: 6px;
 
         // Card Header
         HorizontalLayout {
-            spacing: Theme.spacing-sm;
+            spacing: Theme.spacing-xs;
             alignment: space-between;
 
             // Account Identity
             VerticalLayout {
-                spacing: 2px;
+                spacing: 1px;
                 horizontal-stretch: 1;
 
                 Text {
                     text: root.alias;
                     color: Theme.text-primary;
-                    font-size: Theme.font-md;
+                    font-size: Theme.font-base;
                     font-weight: 700;
                     overflow: elide;
                 }
 
                 Text {
                     text: root.email;
-                    color: Theme.text-secondary;
+                    color: Theme.text-muted;
                     font-size: Theme.font-xs;
                     overflow: elide;
                 }
@@ -87,7 +90,7 @@ export component AccountCard inherits Rectangle {
 
             // Status Badges
             HorizontalLayout {
-                spacing: Theme.spacing-xs;
+                spacing: 4px;
                 alignment: end;
 
                 // Tier Badge
@@ -98,10 +101,10 @@ export component AccountCard inherits Rectangle {
                     border-radius: Theme.radius-xs;
 
                     HorizontalLayout {
-                        padding-left: 6px;
-                        padding-right: 6px;
-                        padding-top: 2px;
-                        padding-bottom: 2px;
+                        padding-left: 5px;
+                        padding-right: 5px;
+                        padding-top: 1px;
+                        padding-bottom: 1px;
                         alignment: center;
 
                         Text {
@@ -122,18 +125,18 @@ export component AccountCard inherits Rectangle {
                     border-radius: Theme.radius-xs;
 
                     HorizontalLayout {
-                        padding-left: 6px;
-                        padding-right: 6px;
-                        padding-top: 2px;
-                        padding-bottom: 2px;
+                        padding-left: 5px;
+                        padding-right: 5px;
+                        padding-top: 1px;
+                        padding-bottom: 1px;
                         spacing: 4px;
 
                         VerticalLayout {
                             alignment: center;
                             Rectangle {
-                                width: 6px;
-                                height: 6px;
-                                border-radius: 3px;
+                                width: 5px;
+                                height: 5px;
+                                border-radius: 2.5px;
                                 background: Theme.accent-emerald;
                             }
                         }
@@ -158,22 +161,34 @@ export component AccountCard inherits Rectangle {
 
         // Meter 1: 5-Hour Session Quota
         VerticalLayout {
-            spacing: 3px;
+            spacing: 2px;
 
             HorizontalLayout {
                 alignment: space-between;
 
                 Text {
-                    text: "5-Hour Session Quota";
+                    text: "5h Rolling Limit";
                     color: Theme.text-secondary;
                     font-size: Theme.font-xs;
+                    font-weight: 500;
                 }
 
-                Text {
-                    text: root.session_quota_label;
-                    color: Theme.text-primary;
-                    font-size: Theme.font-xs;
-                    font-weight: 600;
+                HorizontalLayout {
+                    spacing: 6px;
+                    alignment: end;
+
+                    Text {
+                        text: root.reset_countdown == "Ready" ? "Ready" : "Reset: " + root.reset_countdown;
+                        color: Theme.text-muted;
+                        font-size: Theme.font-xs;
+                    }
+
+                    Text {
+                        text: root.session_quota_label;
+                        color: Theme.text-primary;
+                        font-size: Theme.font-xs;
+                        font-weight: 700;
+                    }
                 }
             }
 
@@ -184,22 +199,23 @@ export component AccountCard inherits Rectangle {
 
         // Meter 2: Weekly Quota
         VerticalLayout {
-            spacing: 3px;
+            spacing: 2px;
 
             HorizontalLayout {
                 alignment: space-between;
 
                 Text {
-                    text: "Weekly Quota";
+                    text: "Weekly Cap";
                     color: Theme.text-secondary;
                     font-size: Theme.font-xs;
+                    font-weight: 500;
                 }
 
                 Text {
                     text: root.weekly_quota_label;
                     color: Theme.text-primary;
                     font-size: Theme.font-xs;
-                    font-weight: 600;
+                    font-weight: 700;
                 }
             }
 
@@ -208,59 +224,51 @@ export component AccountCard inherits Rectangle {
             }
         }
 
-        // Footer: Reset countdown & Switch action button
-        HorizontalLayout {
-            alignment: space-between;
-            spacing: Theme.spacing-sm;
+        // Action button
+        Rectangle {
+            border-radius: Theme.radius-sm;
+            background: root.is_live ? #064e3b :
+                        btn_touch.has-hover ? Theme.bg-button-hover : Theme.bg-button;
+            border-width: 1px;
+            border-color: root.is_live ? Theme.accent-emerald :
+                          btn_touch.has-hover ? Theme.accent-sky : Theme.border-default;
 
-            // Countdown text
+            animate background { duration: 150ms; }
+            animate border-color { duration: 150ms; }
+
             HorizontalLayout {
-                alignment: start;
-                vertical-stretch: 1;
+                padding-left: Theme.spacing-sm;
+                padding-right: Theme.spacing-sm;
+                padding-top: 5px;
+                padding-bottom: 5px;
+                alignment: center;
+                spacing: 6px;
+
+                if root.is_live : VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 6px;
+                        height: 6px;
+                        border-radius: 3px;
+                        background: Theme.accent-emerald;
+                    }
+                }
 
                 Text {
-                    text: "Reset: " + root.reset_countdown;
-                    color: Theme.text-muted;
-                    font-size: Theme.font-xs;
+                    text: root.is_live ? "Active Account" : "Switch to Account";
+                    color: root.is_live ? #6ee7b7 :
+                           btn_touch.has-hover ? Theme.accent-sky : Theme.text-primary;
+                    font-size: Theme.font-sm;
+                    font-weight: 600;
                     vertical-alignment: center;
                 }
             }
 
-            // Action button
-            Rectangle {
-                border-radius: Theme.radius-sm;
-                background: root.is_live ? #064e3b :
-                            btn_touch.has-hover ? Theme.bg-button-hover : Theme.bg-button;
-                border-width: 1px;
-                border-color: root.is_live ? Theme.accent-emerald :
-                              btn_touch.has-hover ? Theme.accent-sky : Theme.border-default;
-
-                animate background { duration: 150ms; }
-                animate border-color { duration: 150ms; }
-
-                HorizontalLayout {
-                    padding-left: Theme.spacing-md;
-                    padding-right: Theme.spacing-md;
-                    padding-top: 6px;
-                    padding-bottom: 6px;
-                    alignment: center;
-
-                    Text {
-                        text: root.is_live ? "Active Account" : "Switch to Account";
-                        color: root.is_live ? #6ee7b7 :
-                               btn_touch.has-hover ? Theme.accent-sky : Theme.text-primary;
-                        font-size: Theme.font-sm;
-                        font-weight: 600;
-                        vertical-alignment: center;
-                    }
-                }
-
-                btn_touch := TouchArea {
-                    mouse-cursor: root.is_live ? MouseCursor.default : MouseCursor.pointer;
-                    clicked => {
-                        if !root.is_live {
-                            root.switch_clicked();
-                        }
+            btn_touch := TouchArea {
+                mouse-cursor: root.is_live ? MouseCursor.default : MouseCursor.pointer;
+                clicked => {
+                    if !root.is_live {
+                        root.switch_clicked();
                     }
                 }
             }
