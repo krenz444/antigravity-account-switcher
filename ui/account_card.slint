@@ -1,0 +1,269 @@
+// Antigravity Switchboard - Account Card Component
+// High-density card displaying Antigravity Google Account state, session & weekly quotas
+
+import { Theme } from "./theme.slint";
+import { ProgressBar } from "./progress_bar.slint";
+
+export struct AccountData {
+    id: string,
+    alias: string,
+    email: string,
+    tier: string,
+    is_live: bool,
+    is_selected: bool,
+    session_quota_pct: float,
+    session_quota_label: string,
+    weekly_quota_pct: float,
+    weekly_quota_label: string,
+    reset_countdown: string,
+    status_text: string,
+}
+
+export component AccountCard inherits Rectangle {
+    in property <string> account_id: "";
+    in property <string> alias: "Google Account";
+    in property <string> email: "user@example.com";
+    in property <string> tier: "Pro";
+    in property <bool> is_live: false;
+    in property <bool> is_selected: false;
+    in property <float> session_quota_pct: 85.0;
+    in property <string> session_quota_label: "85%";
+    in property <float> weekly_quota_pct: 64.0;
+    in property <string> weekly_quota_label: "64%";
+    in property <string> reset_countdown: "Ready";
+    in property <string> status_text: "Standby";
+
+    callback switch_clicked();
+    callback card_selected();
+
+    background: root.is_selected ? Theme.bg-card-selected :
+                card_touch.has-hover ? Theme.bg-card-hover : Theme.bg-card;
+    border-width: (root.is_live || root.is_selected) ? 1.5px : 1px;
+    border-color: root.is_live ? Theme.border-active :
+                  root.is_selected ? Theme.border-selected :
+                  card_touch.has-hover ? Theme.border-hover : Theme.border-default;
+    border-radius: Theme.radius-lg;
+    clip: true;
+
+    animate background { duration: 150ms; }
+    animate border-color { duration: 150ms; }
+
+    card_touch := TouchArea {
+        mouse-cursor: MouseCursor.pointer;
+        clicked => {
+            root.card_selected();
+        }
+    }
+
+    VerticalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-sm;
+
+        // Card Header
+        HorizontalLayout {
+            spacing: Theme.spacing-sm;
+            alignment: space-between;
+
+            // Account Identity
+            VerticalLayout {
+                spacing: 2px;
+                horizontal-stretch: 1;
+
+                Text {
+                    text: root.alias;
+                    color: Theme.text-primary;
+                    font-size: Theme.font-md;
+                    font-weight: 700;
+                    overflow: elide;
+                }
+
+                Text {
+                    text: root.email;
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-xs;
+                    overflow: elide;
+                }
+            }
+
+            // Status Badges
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                alignment: end;
+
+                // Tier Badge
+                Rectangle {
+                    background: Theme.bg-badge;
+                    border-width: 1px;
+                    border-color: root.tier == "Pro" ? Theme.accent-sky : Theme.border-default;
+                    border-radius: Theme.radius-xs;
+
+                    HorizontalLayout {
+                        padding-left: 6px;
+                        padding-right: 6px;
+                        padding-top: 2px;
+                        padding-bottom: 2px;
+                        alignment: center;
+
+                        Text {
+                            text: root.tier;
+                            color: root.tier == "Pro" ? Theme.accent-sky : Theme.text-secondary;
+                            font-size: Theme.font-xs;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                // Live Active Indicator
+                if root.is_live : Rectangle {
+                    background: #064e3b;
+                    border-width: 1px;
+                    border-color: Theme.accent-emerald;
+                    border-radius: Theme.radius-xs;
+
+                    HorizontalLayout {
+                        padding-left: 6px;
+                        padding-right: 6px;
+                        padding-top: 2px;
+                        padding-bottom: 2px;
+                        spacing: 4px;
+
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 6px;
+                                height: 6px;
+                                border-radius: 3px;
+                                background: Theme.accent-emerald;
+                            }
+                        }
+
+                        Text {
+                            text: "LIVE";
+                            color: #6ee7b7; // 6.38:1 WCAG AA contrast against #064e3b
+                            font-size: Theme.font-xs;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Subtle divider
+        Rectangle {
+            height: 1px;
+            background: Theme.border-subtle;
+        }
+
+        // Meter 1: 5-Hour Session Quota
+        VerticalLayout {
+            spacing: 3px;
+
+            HorizontalLayout {
+                alignment: space-between;
+
+                Text {
+                    text: "5-Hour Session Quota";
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-xs;
+                }
+
+                Text {
+                    text: root.session_quota_label;
+                    color: Theme.text-primary;
+                    font-size: Theme.font-xs;
+                    font-weight: 600;
+                }
+            }
+
+            ProgressBar {
+                progress: root.session_quota_pct;
+            }
+        }
+
+        // Meter 2: Weekly Quota
+        VerticalLayout {
+            spacing: 3px;
+
+            HorizontalLayout {
+                alignment: space-between;
+
+                Text {
+                    text: "Weekly Quota";
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-xs;
+                }
+
+                Text {
+                    text: root.weekly_quota_label;
+                    color: Theme.text-primary;
+                    font-size: Theme.font-xs;
+                    font-weight: 600;
+                }
+            }
+
+            ProgressBar {
+                progress: root.weekly_quota_pct;
+            }
+        }
+
+        // Footer: Reset countdown & Switch action button
+        HorizontalLayout {
+            alignment: space-between;
+            spacing: Theme.spacing-sm;
+
+            // Countdown text
+            HorizontalLayout {
+                alignment: start;
+                vertical-stretch: 1;
+
+                Text {
+                    text: "Reset: " + root.reset_countdown;
+                    color: Theme.text-muted;
+                    font-size: Theme.font-xs;
+                    vertical-alignment: center;
+                }
+            }
+
+            // Action button
+            Rectangle {
+                border-radius: Theme.radius-sm;
+                background: root.is_live ? #064e3b :
+                            btn_touch.has-hover ? Theme.bg-button-hover : Theme.bg-button;
+                border-width: 1px;
+                border-color: root.is_live ? Theme.accent-emerald :
+                              btn_touch.has-hover ? Theme.accent-sky : Theme.border-default;
+
+                animate background { duration: 150ms; }
+                animate border-color { duration: 150ms; }
+
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: 6px;
+                    padding-bottom: 6px;
+                    alignment: center;
+
+                    Text {
+                        text: root.is_live ? "Active Account" : "Switch to Account";
+                        color: root.is_live ? #6ee7b7 :
+                               btn_touch.has-hover ? Theme.accent-sky : Theme.text-primary;
+                        font-size: Theme.font-sm;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                }
+
+                btn_touch := TouchArea {
+                    mouse-cursor: root.is_live ? MouseCursor.default : MouseCursor.pointer;
+                    clicked => {
+                        if !root.is_live {
+                            root.switch_clicked();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

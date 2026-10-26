@@ -1,0 +1,40 @@
+// Antigravity Switchboard - Sleek Progress Bar Component
+// Custom 6px height with dynamic color thresholds: Green > 50%, Amber 20-50%, Rose < 20%
+
+import { Theme } from "./theme.slint";
+
+export component ProgressBar inherits Rectangle {
+    in property <float> progress: 100.0; // 0.0 to 100.0
+    in property <length> bar-height: 6px;
+    in property <bool> custom-color-enabled: false;
+    in property <color> custom-fill-color: Theme.accent-emerald;
+
+    // Dynamic threshold coloring: Green > 50%, Amber 20-50%, Rose < 20%
+    property <color> dynamic-color: root.progress > 50.0 ? Theme.accent-emerald :
+                                    root.progress >= 20.0 ? Theme.accent-amber : Theme.accent-rose;
+
+    property <color> active-color: root.custom-color-enabled ? root.custom-fill-color : root.dynamic-color;
+
+    // Clamped progress between 0.0 and 100.0 normalized to 0.0..1.0
+    property <float> ratio: Math.max(0.0, Math.min(100.0, root.progress)) / 100.0;
+
+    height: root.bar-height;
+    background: Theme.bg-track;
+    border-width: 1px;
+    border-color: Theme.border-default;
+    border-radius: Theme.radius-pill;
+    clip: true;
+
+    // Active fill
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width * root.ratio;
+        height: parent.height;
+        background: root.active-color;
+        border-radius: Theme.radius-pill;
+
+        animate width { duration: 250ms; easing: ease-out; }
+        animate background { duration: 200ms; easing: ease-in-out; }
+    }
+}

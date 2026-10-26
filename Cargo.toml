@@ -1,0 +1,30 @@
+[package]
+name = "antigravity-switchboard"
+version = "2.0.0"
+edition = "2021"
+authors = ["Antigravity Swarm"]
+description = "Native Rust + Slint account switcher and quota dashboard for Antigravity"
+
+[dependencies]
+slint = { version = "1.9", features = ["backend-winit", "renderer-femtovg"] }
+tokio = { version = "1.38", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Threading",
+    "Win32_Graphics_Gdi",
+    "Win32_Security_Credentials",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell"
+] }
+log = "0.4"
+env_logger = "0.11"
+chrono = "0.4"
+sysinfo = "0.31"
+
+[build-dependencies]
+slint-build = "1.9"
+winres = "0.1"

@@ -333,6 +333,25 @@ def apply_theme_globals(theme_name=None):
 # Initialize globals with modern obsidian default
 apply_theme_globals(DEFAULT_THEME)
 
+# DeepSeek platform card palette (dark-theme friendly, DeepSeek brand blue)
+DEEPSEEK_BG_CARD = "#0d1526"
+DEEPSEEK_BORDER = "#4d6bfe"
+DEEPSEEK_BADGE = "#4d6bfe"
+DEEPSEEK_ACCENT = "#8b9dff"
+
+
+def fmt_compact(n):
+    """Formats a token count into a compact human string (e.g. 75.1K, 58.9M)."""
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        return "—"
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.1f}K"
+    return str(n)
+
 
 def get_quota_color(used_pct):
     """Consistent color scale across Google and Claude progress meters."""
@@ -1207,30 +1226,19 @@ class AccountSwitchboardApp:
             canvas_5h.bind("<Configure>", lambda e, n=name: self.redraw_bar(n, "5h"))
             canvas_wk.bind("<Configure>", lambda e, n=name: self.redraw_bar(n, "wk"))
 
-        # Build Dedicated Claude for Windows Desktop App Card
+        # Build Dedicated Claude Code Card (live account + usage)
         claude_info = router.get_claude_status()
         if claude_info and claude_info.get("detected"):
             c_email = claude_info.get("email") or "Unknown"
-            c_tier = claude_info.get("tier_label") or "Claude Pro"
+            c_tier = claude_info.get("tier_label") or "Claude"
             c_running = claude_info.get("app_running", False)
-            c_pids = claude_info.get("app_pids", [])
-
-            init_5h_used = claude_info.get("session_used_pct", 11)
-            init_5h_rem = claude_info.get("session_rem_pct", 89)
-            init_wk_used = claude_info.get("weekly_used_pct", 92)
-            init_wk_rem = claude_info.get("weekly_rem_pct", 8)
-
-            init_5h_col = get_quota_color(init_5h_used)
-            init_5h_txt = init_5h_col
-            init_wk_col = get_quota_color(init_wk_used)
-            init_wk_txt = init_wk_col
-
-            s_reset_init = claude_info.get("session_reset_desc", "Resets in 4 hr 36 min")
-            w_reset_init = claude_info.get("weekly_reset_desc", "Resets Mon 7:00 PM")
-            model_init = claude_info.get("active_model", "Opus 5.5 High")
+            c_usage = claude_info.get("usage") or {}
+            c_in = c_usage.get("input_tokens", 0) or 0
+            c_out = c_usage.get("output_tokens", 0) or 0
+            c_cost = c_usage.get("cost_usd", 0.0) or 0.0
 
             if c_running:
-                c_status_txt = "● ACTIVE IN APP"
+                c_status_txt = "● ACTIVE"
                 c_status_color = COLOR_ACTIVE
             else:
                 c_status_txt = "● READY"
@@ -1246,12 +1254,10 @@ class AccountSwitchboardApp:
             )
             c_card.pack(fill=tk.X, pady=4)
 
-            # Left Section: Identity Column (280px fixed width, matching Google cards)
             c_left_col = tk.Frame(c_card, bg=self.theme["bg_card_claude"], width=280)
             c_left_col.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 14))
             c_left_col.pack_propagate(False)
 
-            # Line 1: Service Badge + Profile Name + Tier Pill
             c_badge_frame = tk.Frame(c_left_col, bg=self.theme["bg_card_claude"])
             c_badge_frame.pack(anchor="w")
 
@@ -1268,7 +1274,7 @@ class AccountSwitchboardApp:
 
             c_prof_lbl = tk.Label(
                 c_badge_frame,
-                text="Claude Pro",
+                text="Claude Code",
                 font=("Segoe UI", 11, "bold"),
                 fg=self.theme["text_main"],
                 bg=self.theme["bg_card_claude"]
@@ -1277,7 +1283,7 @@ class AccountSwitchboardApp:
 
             c_tier_pill = tk.Label(
                 c_badge_frame,
-                text="Pro Tier",
+                text=c_tier,
                 font=("Segoe UI", 8, "bold"),
                 bg="#2e1065",
                 fg="#d8b4fe",
@@ -1286,7 +1292,6 @@ class AccountSwitchboardApp:
             )
             c_tier_pill.pack(side=tk.LEFT)
 
-            # Line 2: Email line with 1-click copy action
             c_email_row = tk.Frame(c_left_col, bg=self.theme["bg_card_claude"])
             c_email_row.pack(anchor="w", pady=(3, 0))
 
@@ -1314,7 +1319,6 @@ class AccountSwitchboardApp:
             c_email_lbl.bind("<Button-1>", c_copy_action)
             c_copy_btn.bind("<Button-1>", c_copy_action)
 
-            # Line 3: Modern Status Pill
             c_status_pill = tk.Label(
                 c_left_col,
                 text=f" {c_status_txt} ",
@@ -1324,71 +1328,67 @@ class AccountSwitchboardApp:
             )
             c_status_pill.pack(anchor="w", pady=(4, 0))
 
-            # Middle Section: Quota Bars & Live Status
             c_mid_col = tk.Frame(c_card, bg=self.theme["bg_card_claude"])
             c_mid_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=12)
 
-            # 1. Session Limit Row (Value packed RIGHT first, then title packed LEFT)
-            c_row_5h = tk.Frame(c_mid_col, bg=self.theme["bg_card_claude"])
-            c_row_5h.pack(fill=tk.X, pady=(0, 1))
+            c_row_usage = tk.Frame(c_mid_col, bg=self.theme["bg_card_claude"])
+            c_row_usage.pack(fill=tk.X, pady=(0, 1))
+            c_lbl_usage_val = tk.Label(
+                c_row_usage,
+                text=f"{fmt_compact(c_in)} in / {fmt_compact(c_out)} out",
+                font=("Segoe UI", 10, "bold"),
+                fg=self.theme["text_main"],
+                bg=self.theme["bg_card_claude"]
+            )
+            c_lbl_usage_val.pack(side=tk.RIGHT)
+            c_lbl_usage_title = tk.Label(
+                c_row_usage,
+                text="MODEL USAGE (TOKENS)",
+                font=("Segoe UI", 8, "bold"),
+                fg=self.theme["text_muted"],
+                bg=self.theme["bg_card_claude"]
+            )
+            c_lbl_usage_title.pack(side=tk.LEFT)
 
-            c_lbl_5h_val = tk.Label(c_row_5h, text=f"{init_5h_used}% used  ({init_5h_rem}% left)", font=("Segoe UI", 10, "bold"), fg=init_5h_txt, bg=self.theme["bg_card_claude"])
-            c_lbl_5h_val.pack(side=tk.RIGHT)
+            c_row_cost = tk.Frame(c_mid_col, bg=self.theme["bg_card_claude"])
+            c_row_cost.pack(fill=tk.X, pady=(1, 1))
+            c_lbl_cost_val = tk.Label(
+                c_row_cost,
+                text=f"${c_cost:.2f}",
+                font=("Segoe UI", 10, "bold"),
+                fg=COLOR_CLAUDE,
+                bg=self.theme["bg_card_claude"]
+            )
+            c_lbl_cost_val.pack(side=tk.RIGHT)
+            c_lbl_cost_title = tk.Label(
+                c_row_cost,
+                text="TOTAL COST (USD)",
+                font=("Segoe UI", 8, "bold"),
+                fg=self.theme["text_muted"],
+                bg=self.theme["bg_card_claude"]
+            )
+            c_lbl_cost_title.pack(side=tk.LEFT)
 
-            c_lbl_5h_title = tk.Label(c_row_5h, text="SESSION LIMIT (5H)", font=("Segoe UI", 8, "bold"), fg=self.theme["text_muted"], bg=self.theme["bg_card_claude"])
-            c_lbl_5h_title.pack(side=tk.LEFT)
-
-            c_canvas_5h = tk.Canvas(c_mid_col, height=8, bg=self.theme["bg_card_claude"], highlightthickness=0)
-            c_canvas_5h.pack(fill=tk.X, pady=(2, 4))
-
-            # 2. Weekly Limit Row (Value packed RIGHT first, then title packed LEFT)
-            c_row_wk = tk.Frame(c_mid_col, bg=self.theme["bg_card_claude"])
-            c_row_wk.pack(fill=tk.X, pady=(1, 1))
-
-            c_lbl_wk_val = tk.Label(c_row_wk, text=f"{init_wk_used}% used  ({init_wk_rem}% left)", font=("Segoe UI", 10, "bold"), fg=init_wk_txt, bg=self.theme["bg_card_claude"])
-            c_lbl_wk_val.pack(side=tk.RIGHT)
-
-            c_lbl_wk_title = tk.Label(c_row_wk, text="WEEKLY WINDOW (7D)", font=("Segoe UI", 8, "bold"), fg=self.theme["text_muted"], bg=self.theme["bg_card_claude"])
-            c_lbl_wk_title.pack(side=tk.LEFT)
-
-            c_canvas_wk = tk.Canvas(c_mid_col, height=8, bg=self.theme["bg_card_claude"], highlightthickness=0)
-            c_canvas_wk.pack(fill=tk.X, pady=(2, 4))
-
-            # 3. Status & App Row
             c_detail_row = tk.Frame(c_mid_col, bg=self.theme["bg_card_claude"])
             c_detail_row.pack(fill=tk.X, pady=(2, 0))
-
-            if show_model_only:
-                c_billing_lbl = tk.Label(
-                    c_detail_row,
-                    text=f"Model: {model_init}  🔴" if init_wk_used >= 80 else f"Model: {model_init}",
-                    font=("Segoe UI", 8, "bold"),
-                    fg="#f87171" if init_wk_used >= 80 else self.theme["text_muted"],
-                    bg=self.theme["bg_card_claude"]
-                )
-                c_billing_lbl.pack(side=tk.RIGHT)
-            else:
-                c_billing_lbl = None
-
             c_timer_lbl = tk.Label(
                 c_detail_row,
-                text=f"⏱ {s_reset_init}  •  {w_reset_init}",
+                text="⏱ Syncing usage...",
                 font=("Segoe UI", 8, "bold"),
                 fg=self.theme["text_muted"],
                 bg=self.theme["bg_card_claude"]
             )
             c_timer_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-            # Right Section: Action Button (Open Windows App)
             c_right_col = tk.Frame(c_card, bg=self.theme["bg_card_claude"])
             c_right_col.pack(side=tk.RIGHT, fill=tk.Y, padx=(12, 0))
 
             def on_launch_claude_app():
                 ok = router.launch_claude_desktop()
                 if ok:
-                    self.footer_status.config(text="✓ Focused Claude for Windows Desktop App!")
+                    self.footer_status.config(text="✓ Focused Claude Code!")
                 else:
-                    self.footer_status.config(text="Notice: Could not launch Claude desktop app.")
+                    self.footer_status.config(text="Notice: Could not launch Claude Code.")
 
             c_switch_btn = make_button(
                 c_right_col,
@@ -1404,40 +1404,201 @@ class AccountSwitchboardApp:
             c_switch_btn.pack(expand=True, pady=4)
             self.action_buttons.append(c_switch_btn)
 
-            # Parse initial epoch deadline for Claude 5h countdown
-            init_claude_exp_5h = None
-            m = re.search(r'(\d+)\s*hr(?:\s*(\d+)\s*min)?', s_reset_init)
-            if m:
-                h = int(m.group(1))
-                mins = int(m.group(2) or 0)
-                init_claude_exp_5h = time.time() + h * 3600 + mins * 60
-
             self.cards["claude"] = {
                 "card": c_card,
                 "is_live": False,
                 "is_staged": False,
                 "switch_btn": c_switch_btn,
-                "lbl_5h_val": c_lbl_5h_val,
-                "canvas_5h": c_canvas_5h,
-                "lbl_wk_val": c_lbl_wk_val,
-                "canvas_wk": c_canvas_wk,
+                "lbl_5h_val": c_lbl_usage_val,
+                "lbl_wk_val": c_lbl_cost_val,
                 "timer_lbl": c_timer_lbl,
                 "status_pill": c_status_pill,
-                "claude_lbl": c_billing_lbl,
-                "rem_5h_pct": init_5h_rem,
-                "used_5h_pct": init_5h_used,
-                "rem_wk_pct": init_wk_rem,
-                "used_wk_pct": init_wk_used,
-                "last_5h_pct": init_5h_used,
-                "last_5h_col": init_5h_col,
-                "last_wk_pct": init_wk_used,
-                "last_wk_col": init_wk_col,
-                "exp_5h_ts": init_claude_exp_5h,
-                "weekly_reset_str": w_reset_init
+                "claude_lbl": None,
+                "rem_5h_pct": None,
+                "used_5h_pct": None,
+                "rem_wk_pct": None,
+                "used_wk_pct": None,
+                "last_5h_pct": None,
+                "last_5h_col": None,
+                "last_wk_pct": None,
+                "last_wk_col": None,
+                "exp_5h_ts": None,
+                "weekly_reset_str": None,
             }
 
-            c_canvas_5h.bind("<Configure>", lambda e, n="claude": self.redraw_bar(n, "5h"))
-            c_canvas_wk.bind("<Configure>", lambda e, n="claude": self.redraw_bar(n, "wk"))
+        # Build Dedicated DeepSeek Platform Card (live balance + spend)
+        deepseek_detected = bool(router.read_deepseek_grant())
+        if deepseek_detected:
+            d_signed_in = True
+            d_balances = []
+            d_bonus = []
+            d_spend = []
+            d_error = None
+
+            if d_signed_in and not d_error:
+                d_status_txt = "● SIGNED IN"
+                d_status_color = DEEPSEEK_ACCENT
+            elif d_error:
+                d_status_txt = "● QUERY FAILED"
+                d_status_color = COLOR_WARN
+            else:
+                d_status_txt = "● SIGNED OUT"
+                d_status_color = COLOR_WARN
+
+            d_card = tk.Frame(
+                self.cards_frame,
+                bg=DEEPSEEK_BG_CARD,
+                padx=16,
+                pady=10,
+                highlightthickness=2,
+                highlightbackground=DEEPSEEK_BORDER
+            )
+            d_card.pack(fill=tk.X, pady=4)
+
+            d_left_col = tk.Frame(d_card, bg=DEEPSEEK_BG_CARD, width=280)
+            d_left_col.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 14))
+            d_left_col.pack_propagate(False)
+
+            d_badge_frame = tk.Frame(d_left_col, bg=DEEPSEEK_BG_CARD)
+            d_badge_frame.pack(anchor="w")
+            d_num_badge = tk.Label(
+                d_badge_frame,
+                text=" DeepSeek ",
+                font=("Segoe UI", 9, "bold"),
+                bg=DEEPSEEK_BADGE,
+                fg="#ffffff",
+                padx=5,
+                pady=1
+            )
+            d_num_badge.pack(side=tk.LEFT, padx=(0, 6))
+
+            d_prof_lbl = tk.Label(
+                d_badge_frame,
+                text="DeepSeek Platform",
+                font=("Segoe UI", 11, "bold"),
+                fg=self.theme["text_main"],
+                bg=DEEPSEEK_BG_CARD
+            )
+            d_prof_lbl.pack(side=tk.LEFT, padx=(0, 6))
+
+            d_tier_pill = tk.Label(
+                d_badge_frame,
+                text="Harness Account",
+                font=("Segoe UI", 8, "bold"),
+                bg="#1c2a5a",
+                fg=DEEPSEEK_ACCENT,
+                padx=5,
+                pady=1
+            )
+            d_tier_pill.pack(side=tk.LEFT)
+
+            d_status_pill = tk.Label(
+                d_left_col,
+                text=f" {d_status_txt} ",
+                font=("Segoe UI", 8, "bold"),
+                fg=d_status_color,
+                bg=DEEPSEEK_BG_CARD
+            )
+            d_status_pill.pack(anchor="w", pady=(8, 0))
+
+            d_mid_col = tk.Frame(d_card, bg=DEEPSEEK_BG_CARD)
+            d_mid_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=12)
+
+            d_balance = f"{d_balances[0]['balance']} {d_balances[0]['currency']}" if d_balances else "—"
+            d_bonus_txt = f"{d_bonus[0]['balance']} {d_bonus[0]['currency']}" if d_bonus else "—"
+
+            d_row_bal = tk.Frame(d_mid_col, bg=DEEPSEEK_BG_CARD)
+            d_row_bal.pack(fill=tk.X, pady=(0, 1))
+            d_lbl_bal_val = tk.Label(
+                d_row_bal,
+                text=d_balance,
+                font=("Segoe UI", 10, "bold"),
+                fg=self.theme["text_main"],
+                bg=DEEPSEEK_BG_CARD
+            )
+            d_lbl_bal_val.pack(side=tk.RIGHT)
+            d_lbl_bal_title = tk.Label(
+                d_row_bal,
+                text="RECHARGE BALANCE",
+                font=("Segoe UI", 8, "bold"),
+                fg=self.theme["text_muted"],
+                bg=DEEPSEEK_BG_CARD
+            )
+            d_lbl_bal_title.pack(side=tk.LEFT)
+
+            d_row_bonus = tk.Frame(d_mid_col, bg=DEEPSEEK_BG_CARD)
+            d_row_bonus.pack(fill=tk.X, pady=(1, 1))
+            d_lbl_bonus_val = tk.Label(
+                d_row_bonus,
+                text=d_bonus_txt,
+                font=("Segoe UI", 10, "bold"),
+                fg=DEEPSEEK_ACCENT,
+                bg=DEEPSEEK_BG_CARD
+            )
+            d_lbl_bonus_val.pack(side=tk.RIGHT)
+            d_lbl_bonus_title = tk.Label(
+                d_row_bonus,
+                text="BONUS BALANCE",
+                font=("Segoe UI", 8, "bold"),
+                fg=self.theme["text_muted"],
+                bg=DEEPSEEK_BG_CARD
+            )
+            d_lbl_bonus_title.pack(side=tk.LEFT)
+
+            d_detail_row = tk.Frame(d_mid_col, bg=DEEPSEEK_BG_CARD)
+            d_detail_row.pack(fill=tk.X, pady=(2, 0))
+            d_spend_txt = f"Spent {d_spend[0]['amount']} {d_spend[0]['currency']}" if d_spend else "Spent —"
+            d_timer_lbl = tk.Label(
+                d_detail_row,
+                text=f"⏱ {d_spend_txt} • Syncing...",
+                font=("Segoe UI", 8, "bold"),
+                fg=self.theme["text_muted"],
+                bg=DEEPSEEK_BG_CARD
+            )
+            d_timer_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+            d_right_col = tk.Frame(d_card, bg=DEEPSEEK_BG_CARD)
+            d_right_col.pack(side=tk.RIGHT, fill=tk.Y, padx=(12, 0))
+
+            def on_open_platform():
+                import webbrowser
+                webbrowser.open("https://platform.deepseek.com/usage")
+
+            d_btn = make_button(
+                d_right_col,
+                text="↗ Open Platform",
+                font=("Segoe UI", 9, "bold"),
+                bg=DEEPSEEK_BADGE,
+                fg="#ffffff",
+                hover_bg="#3b57d6",
+                padx=14,
+                pady=6,
+                command=on_open_platform
+            )
+            d_btn.pack(expand=True, pady=4)
+            self.action_buttons.append(d_btn)
+
+            self.cards["deepseek"] = {
+                "card": d_card,
+                "is_live": False,
+                "is_staged": False,
+                "switch_btn": d_btn,
+                "lbl_5h_val": d_lbl_bal_val,
+                "lbl_wk_val": d_lbl_bonus_val,
+                "timer_lbl": d_timer_lbl,
+                "status_pill": d_status_pill,
+                "claude_lbl": None,
+                "rem_5h_pct": None,
+                "used_5h_pct": None,
+                "rem_wk_pct": None,
+                "used_wk_pct": None,
+                "last_5h_pct": None,
+                "last_5h_col": None,
+                "last_wk_pct": None,
+                "last_wk_col": None,
+                "exp_5h_ts": None,
+                "weekly_reset_str": None,
+            }
 
     def render_canvas_bar(self, canvas, pct, color):
         """Zero-churn progress bar renderer: renders smooth capsule bars with rounded caps."""
@@ -1527,18 +1688,19 @@ class AccountSwitchboardApp:
                 for pname, q in executor.map(fetch_single, profiles):
                     results[pname] = q
 
-            # Query Claude for Windows Desktop App status & live quota
+            # Query Claude Code status & live usage
             try:
                 cs = router.get_claude_status()
-                results["claude"] = {
-                    "session_used_pct": cs.get("session_used_pct", 11),
-                    "session_rem_pct": cs.get("session_rem_pct", 89),
-                    "weekly_used_pct": cs.get("weekly_used_pct", 92),
-                    "weekly_rem_pct": cs.get("weekly_rem_pct", 8),
-                    "claude_status": cs
-                }
+                results["claude"] = {"claude_status": cs}
             except Exception:
                 results["claude"] = None
+
+            # Query DeepSeek platform balance & spend
+            try:
+                ds = router.get_deepseek_status()
+                results["deepseek"] = {"deepseek_status": ds}
+            except Exception:
+                results["deepseek"] = None
 
             if not self.is_destroyed:
                 self.root.after(0, lambda: self.on_quotas_received(results))
@@ -1559,58 +1721,50 @@ class AccountSwitchboardApp:
         for name, refs in self.cards.items():
             q = results.get(name)
 
-            # Handle Claude for Windows Desktop App card
+            # Handle Claude Code card
             if name == "claude":
                 cs = (q.get("claude_status") if q else None) or router.get_claude_status()
-                s_used = cs.get("session_used_pct", 11) if cs else 11
-                s_rem = cs.get("session_rem_pct", 89) if cs else 89
-                w_used = cs.get("weekly_used_pct", 92) if cs else 92
-                w_rem = cs.get("weekly_rem_pct", 8) if cs else 8
+                usage = cs.get("usage", {}) if cs else {}
+                c_in = usage.get("input_tokens", 0) or 0
+                c_out = usage.get("output_tokens", 0) or 0
+                c_cost = usage.get("cost_usd", 0.0) or 0.0
 
-                col_5h = get_quota_color(s_used)
-                txt_col_5h = col_5h
-                col_wk = get_quota_color(w_used)
-                txt_col_wk = col_wk
-
-                refs["lbl_5h_val"].config(text=f"{s_used}% used  ({s_rem}% left)", fg=txt_col_5h)
-                refs["lbl_wk_val"].config(text=f"{w_used}% used  ({w_rem}% left)", fg=txt_col_wk)
-                refs["rem_5h_pct"] = s_rem
-                refs["used_5h_pct"] = s_used
-                refs["rem_wk_pct"] = w_rem
-                refs["used_wk_pct"] = w_used
-                refs["last_5h_pct"] = s_used
-                refs["last_5h_col"] = col_5h
-                refs["last_wk_pct"] = w_used
-                refs["last_wk_col"] = col_wk
-                self.render_canvas_bar(refs["canvas_5h"], s_used, col_5h)
-                self.render_canvas_bar(refs["canvas_wk"], w_used, col_wk)
-
-                s_reset = cs.get("session_reset_desc", "Resets in 4 hr 36 min") if cs else "Resets in 4 hr 36 min"
-                w_reset = cs.get("weekly_reset_desc", "Resets Mon 7:00 PM") if cs else "Resets Mon 7:00 PM"
-                refs["weekly_reset_str"] = w_reset
-
-                # Parse numeric epoch deadline for Claude 5h countdown
-                m = re.search(r'(\d+)\s*hr(?:\s*(\d+)\s*min)?', s_reset)
-                if m:
-                    h = int(m.group(1))
-                    mins = int(m.group(2) or 0)
-                    refs["exp_5h_ts"] = time.time() + h * 3600 + mins * 60
-                else:
-                    refs["exp_5h_ts"] = None
-
-                model_str = cs.get("active_model", "Opus 5.5 High") if cs else "Opus 5.5 High"
-                if refs.get("claude_lbl"):
-                    refs["claude_lbl"].config(
-                        text=f"Model: {model_str}  🔴" if w_used >= 80 else f"Model: {model_str}",
-                        fg=COLOR_DANGER if w_used >= 80 else TEXT_MUTED
-                    )
+                refs["lbl_5h_val"].config(
+                    text=f"{fmt_compact(c_in)} in / {fmt_compact(c_out)} out",
+                    fg=self.theme["text_main"]
+                )
+                refs["lbl_wk_val"].config(text=f"${c_cost:.2f}", fg=COLOR_CLAUDE)
+                refs["timer_lbl"].config(text=f"⏱ Updated {now_str}", fg=TEXT_MUTED)
 
                 is_running = cs.get("app_running", False) if cs else False
-                pids = cs.get("app_pids", []) if cs else []
                 if is_running:
-                    refs["status_pill"].config(text="● ACTIVE IN APP", fg=COLOR_ACTIVE)
+                    refs["status_pill"].config(text="● ACTIVE", fg=COLOR_ACTIVE)
                 else:
                     refs["status_pill"].config(text="● READY", fg=COLOR_CLAUDE)
+                continue
+
+            # Handle DeepSeek Platform card
+            if name == "deepseek":
+                ds = (q.get("deepseek_status") if q else None) or router.get_deepseek_status()
+                balances = (ds.get("balances") or []) if ds else []
+                bonus = (ds.get("bonus_balances") or []) if ds else []
+                spend = (ds.get("total_spend") or []) if ds else []
+                error = ds.get("error") if ds else None
+
+                d_balance = f"{balances[0]['balance']} {balances[0]['currency']}" if balances else "—"
+                d_bonus_txt = f"{bonus[0]['balance']} {bonus[0]['currency']}" if bonus else "—"
+                d_spend_txt = f"Spent {spend[0]['amount']} {spend[0]['currency']}" if spend else "Spent —"
+
+                refs["lbl_5h_val"].config(text=d_balance, fg=self.theme["text_main"])
+                refs["lbl_wk_val"].config(text=d_bonus_txt, fg=DEEPSEEK_ACCENT)
+                refs["timer_lbl"].config(text=f"⏱ {d_spend_txt} • Updated {now_str}", fg=TEXT_MUTED)
+
+                if error:
+                    refs["status_pill"].config(text="● QUERY FAILED", fg=COLOR_WARN)
+                elif ds and ds.get("signed_in"):
+                    refs["status_pill"].config(text="● SIGNED IN", fg=DEEPSEEK_ACCENT)
+                else:
+                    refs["status_pill"].config(text="● SIGNED OUT", fg=COLOR_WARN)
                 continue
 
 
@@ -1746,6 +1900,11 @@ class AccountSwitchboardApp:
         now_ts = time.time()
 
         for name, refs in self.cards.items():
+            # Claude and DeepSeek cards have no 5h/weekly windows; their timer label
+            # is set directly in on_quotas_received and must not be overwritten here.
+            if name in ("claude", "deepseek"):
+                continue
+
             timer_parts = []
 
             # 1. 5-Hour / Session timer

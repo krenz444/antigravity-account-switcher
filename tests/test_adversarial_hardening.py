@@ -332,6 +332,66 @@ class TestConcurrencyAndRaceConditions(unittest.TestCase):
         self.assertEqual(float(fh_m[-1].decode()), 0.22)
         self.assertEqual(float(sd_m[-1].decode()), 0.87)
 
+    def test_claude_dynamic_telemetry_and_resets(self):
+        """Verifies dynamic calculation of Claude session & weekly quotas and countdowns."""
+        import tempfile, json, time
+        claude_temp = tempfile.mkdtemp()
+        now = time.time()
+
+        # Mock find_claude_paths to point to claude_temp
+        with unittest.mock.patch.object(router, 'find_claude_paths', return_value=claude_temp):
+            # 1. Test empty state
+            st = router.get_claude_status()
+            self.assertEqual(st["session_used_pct"], 0)
+            self.assertEqual(st["session_rem_pct"], 100)
+            self.assertIn("Ready", st["session_reset_desc"])
+            self.assertIn("Mon", st["weekly_reset_desc"])
+
+            # 2. Test plan-usage-history with recent active sample
+            hist_path = os.path.join(claude_temp, "plan-usage-history.json")
+            sample_t = (now - 3600) * 1000  # 1 hour ago
+            hist_data = {
+                "samples": [
+                    {"t": sample_t, "u": {"fh": 25, "sd": 80}}
+                ]
+            }
+            with open(hist_path, "w", encoding="utf-8") as f:
+                json.dump(hist_data, f)
+
+            st2 = router.get_claude_status()
+            self.assertEqual(st2["session_used_pct"], 25)
+            self.assertEqual(st2["session_rem_pct"], 75)
+            self.assertEqual(st2["weekly_used_pct"], 80)
+            self.assertEqual(st2["weekly_rem_pct"], 20)
+            self.assertTrue(st2["session_reset_desc"].startswith("Resets in 3 hr") or st2["session_reset_desc"].startswith("Resets in 4 hr"))
+
+            # 3. Test expired session (>5h ago) resets session to 0% used
+            sample_t_old = (now - 6 * 3600) * 1000  # 6 hours ago
+            hist_data["samples"] = [{"t": sample_t_old, "u": {"fh": 40, "sd": 70}}]
+            with open(hist_path, "w", encoding="utf-8") as f:
+                json.dump(hist_data, f)
+
+            st3 = router.get_claude_status()
+            self.assertEqual(st3["session_used_pct"], 0)
+            self.assertEqual(st3["session_rem_pct"], 100)
+            self.assertEqual(st3["session_reset_desc"], "Ready (Window starts on first prompt)")
+            self.assertEqual(st3["weekly_used_pct"], 70)
+
+            # 4. Test LevelDB validUntil future weekly reset
+            ldb_dir = os.path.join(claude_temp, "Local Storage", "leveldb")
+            os.makedirs(ldb_dir, exist_ok=True)
+            future_reset = int(now + 7200) # 2 hours in the future
+            ldb_file = os.path.join(ldb_dir, "000001.ldb")
+            with open(ldb_file, "wb") as f:
+                f.write(f'{{"validUntil":{future_reset},"utilization":0.5}}'.encode())
+
+            st4 = router.get_claude_status()
+            self.assertTrue(st4["weekly_reset_desc"].startswith("Resets in 1h") or st4["weekly_reset_desc"].startswith("Resets in 2h"))
+
+        # Cleanup
+        shutil.rmtree(claude_temp, ignore_errors=True)
+
+
 
 class TestNetworkAndErrorResilience(unittest.TestCase):
     def setUp(self):
@@ -531,8 +591,19 @@ class TestReleaseAndBinaryHardening(unittest.TestCase):
                 app.render_canvas_bar(canvas, 50, "#10b981")
                 app.render_canvas_bar(canvas, 100, "#f43f5e")
                 root.update_idletasks()
+                root.update()
+                if hasattr(app, "icon_photo"):
+                    app.icon_photo = None
+                if hasattr(app, "logo_photo"):
+                    app.logo_photo = None
+                app = None
+                import gc
+                gc.collect()
         finally:
-            root.destroy()
+            try:
+                root.destroy()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":

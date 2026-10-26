@@ -4,6 +4,10 @@ __pycache__/
 *$py.class
 *.tmp*
 
+# Virtual environments
+.venv/
+scratch/
+
 # Runtime State & Profiles
 .usage_state.json
 
@@ -24,3 +28,9 @@ Thumbs.db
 build/
 dist/
 *.spec.bak
+node_modules/
+legacy_v1/
+
+# Rust build artifacts
+target/
+*.exe

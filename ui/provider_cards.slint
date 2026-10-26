@@ -1,0 +1,511 @@
+// Antigravity Switchboard - Provider Cards & Hero Bar
+// ClaudeCard, DeepSeekCard, and Antigravity Client HeroBar
+
+import { Theme } from "./theme.slint";
+import { ProgressBar } from "./progress_bar.slint";
+
+// Hero Bar: Compact top banner displaying active Antigravity Client credentials and Relaunch trigger
+export component HeroBar inherits Rectangle {
+    in property <string> active_alias: "Primary Google";
+    in property <string> active_email: "dev.primary@gmail.com";
+    in property <string> client_status: "Client Running";
+    in property <bool> is_connected: true;
+
+    callback relaunch_clicked();
+
+    height: 52px;
+    background: Theme.bg-hero;
+    border-width: 1px;
+    border-color: Theme.border-default;
+    border-radius: Theme.radius-md;
+    clip: true;
+
+    // Left accent strip (Emerald)
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: 4px;
+        height: parent.height;
+        background: Theme.accent-emerald;
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-lg;
+        padding-right: Theme.spacing-lg;
+        padding-top: Theme.spacing-sm;
+        padding-bottom: Theme.spacing-sm;
+        alignment: space-between;
+
+        // Active Client Identity
+        HorizontalLayout {
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            // Indicator dot
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 4px;
+                    background: Theme.accent-emerald;
+                }
+            }
+
+            VerticalLayout {
+                spacing: 2px;
+                alignment: center;
+
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    alignment: start;
+
+                    Text {
+                        text: "Active Client:";
+                        color: Theme.text-secondary;
+                        font-size: Theme.font-sm;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+
+                    Text {
+                        text: root.active_alias;
+                        color: Theme.text-primary;
+                        font-size: Theme.font-sm;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+
+                    Text {
+                        text: "(" + root.active_email + ")";
+                        color: Theme.text-muted;
+                        font-size: Theme.font-xs;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                }
+
+                Text {
+                    text: root.client_status;
+                    color: Theme.accent-emerald;
+                    font-size: Theme.font-xs;
+                    font-weight: 600;
+                }
+            }
+        }
+
+        // Relaunch Button
+        Rectangle {
+            border-radius: Theme.radius-sm;
+            background: relaunch_touch.has-hover ? #064e3b : Theme.bg-button;
+            border-width: 1px;
+            border-color: relaunch_touch.has-hover ? Theme.accent-emerald : Theme.border-default;
+
+            animate background { duration: 150ms; }
+            animate border-color { duration: 150ms; }
+
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                padding-top: 6px;
+                padding-bottom: 6px;
+                alignment: center;
+
+                Text {
+                    text: "Relaunch Client";
+                    color: relaunch_touch.has-hover ? Theme.text-primary : Theme.accent-emerald;
+                    font-size: Theme.font-sm;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+            }
+
+            relaunch_touch := TouchArea {
+                mouse-cursor: MouseCursor.pointer;
+                clicked => {
+                    root.relaunch_clicked();
+                }
+            }
+        }
+    }
+}
+
+// Claude Card: Dedicated card with purple branding, session & weekly quotas, token usage
+export component ClaudeCard inherits Rectangle {
+    in property <string> email: "claude.user@work.io";
+    in property <string> tier: "Claude Pro / Max";
+    in property <float> session_pct: 74.0;
+    in property <string> session_label: "74%";
+    in property <float> weekly_pct: 52.0;
+    in property <string> weekly_label: "52%";
+    in property <string> reset_countdown: "1h 45m";
+    in property <string> token_usage_text: "185k tokens ($2.10)";
+    in property <bool> is_connected: true;
+
+    callback action_clicked();
+
+    background: Theme.bg-card;
+    border-width: 1px;
+    border-color: Theme.border-default;
+    border-radius: Theme.radius-lg;
+    clip: true;
+
+    VerticalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-sm;
+
+        // Header
+        HorizontalLayout {
+            spacing: Theme.spacing-sm;
+            alignment: space-between;
+
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                alignment: start;
+
+                // Purple Provider Badge
+                Rectangle {
+                    background: #2e1065;
+                    border-width: 1px;
+                    border-color: #a855f7;
+                    border-radius: Theme.radius-xs;
+
+                    HorizontalLayout {
+                        padding-left: 6px;
+                        padding-right: 6px;
+                        padding-top: 2px;
+                        padding-bottom: 2px;
+                        alignment: center;
+
+                        Text {
+                            text: "CLAUDE";
+                            color: Theme.accent-purple;
+                            font-size: Theme.font-xs;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                VerticalLayout {
+                    spacing: 1px;
+
+                    Text {
+                        text: root.tier;
+                        color: Theme.text-primary;
+                        font-size: Theme.font-sm;
+                        font-weight: 700;
+                    }
+
+                    Text {
+                        text: root.email;
+                        color: Theme.text-secondary;
+                        font-size: Theme.font-xs;
+                        overflow: elide;
+                    }
+                }
+            }
+
+            // Token Metrics Pill
+            Rectangle {
+                background: Theme.bg-badge;
+                border-width: 1px;
+                border-color: Theme.border-default;
+                border-radius: Theme.radius-xs;
+
+                HorizontalLayout {
+                    padding-left: 6px;
+                    padding-right: 6px;
+                    padding-top: 2px;
+                    padding-bottom: 2px;
+                    alignment: center;
+
+                    Text {
+                        text: root.token_usage_text;
+                        color: Theme.accent-purple;
+                        font-size: Theme.font-xs;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // Divider
+        Rectangle {
+            height: 1px;
+            background: Theme.border-subtle;
+        }
+
+        // Session Quota Meter
+        VerticalLayout {
+            spacing: 3px;
+
+            HorizontalLayout {
+                alignment: space-between;
+
+                Text {
+                    text: "5-Hour Session Quota";
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-xs;
+                }
+
+                Text {
+                    text: root.session_label;
+                    color: Theme.text-primary;
+                    font-size: Theme.font-xs;
+                    font-weight: 600;
+                }
+            }
+
+            ProgressBar {
+                progress: root.session_pct;
+                custom-color-enabled: true;
+                custom-fill-color: Theme.accent-purple;
+            }
+        }
+
+        // Weekly Quota Meter
+        VerticalLayout {
+            spacing: 3px;
+
+            HorizontalLayout {
+                alignment: space-between;
+
+                Text {
+                    text: "Weekly Quota";
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-xs;
+                }
+
+                Text {
+                    text: root.weekly_label;
+                    color: Theme.text-primary;
+                    font-size: Theme.font-xs;
+                    font-weight: 600;
+                }
+            }
+
+            ProgressBar {
+                progress: root.weekly_pct;
+                custom-color-enabled: true;
+                custom-fill-color: Theme.accent-purple;
+            }
+        }
+
+        // Footer
+        HorizontalLayout {
+            alignment: space-between;
+
+            Text {
+                text: "Reset: " + root.reset_countdown;
+                color: Theme.text-muted;
+                font-size: Theme.font-xs;
+                vertical-alignment: center;
+            }
+
+            Rectangle {
+                border-radius: Theme.radius-sm;
+                background: claude_btn_touch.has-hover ? #3b0764 : Theme.bg-button;
+                border-width: 1px;
+                border-color: claude_btn_touch.has-hover ? Theme.accent-purple : Theme.border-default;
+
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: 4px;
+                    padding-bottom: 4px;
+                    alignment: center;
+
+                    Text {
+                        text: "Sync Provider";
+                        color: claude_btn_touch.has-hover ? Theme.text-primary : Theme.accent-purple;
+                        font-size: Theme.font-xs;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                }
+
+                claude_btn_touch := TouchArea {
+                    mouse-cursor: MouseCursor.pointer;
+                    clicked => {
+                        root.action_clicked();
+                    }
+                }
+            }
+        }
+    }
+}
+
+// DeepSeek Card: Dedicated card with blue branding, balance display, status indicator
+export component DeepSeekCard inherits Rectangle {
+    in property <string> balance_text: "$10.50 USD";
+    in property <string> status_text: "Online / Ready";
+    in property <string> tier_text: "Pay-as-you-go";
+    in property <string> monthly_usage_text: "Month: $3.40";
+    in property <bool> is_connected: true;
+
+    callback top_up_clicked();
+
+    background: Theme.bg-card;
+    border-width: 1px;
+    border-color: Theme.border-default;
+    border-radius: Theme.radius-lg;
+    clip: true;
+
+    VerticalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-sm;
+
+        // Header
+        HorizontalLayout {
+            spacing: Theme.spacing-sm;
+            alignment: space-between;
+
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                alignment: start;
+
+                // Blue Provider Badge
+                Rectangle {
+                    background: #172554;
+                    border-width: 1px;
+                    border-color: #3b82f6;
+                    border-radius: Theme.radius-xs;
+
+                    HorizontalLayout {
+                        padding-left: 6px;
+                        padding-right: 6px;
+                        padding-top: 2px;
+                        padding-bottom: 2px;
+                        alignment: center;
+
+                        Text {
+                            text: "DEEPSEEK";
+                            color: Theme.accent-blue;
+                            font-size: Theme.font-xs;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                Text {
+                    text: root.tier_text;
+                    color: Theme.text-primary;
+                    font-size: Theme.font-sm;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+            }
+
+            // Online Status Pill
+            HorizontalLayout {
+                spacing: 4px;
+                alignment: end;
+
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 6px;
+                        height: 6px;
+                        border-radius: 3px;
+                        background: Theme.accent-emerald;
+                    }
+                }
+
+                Text {
+                    text: root.status_text;
+                    color: Theme.accent-emerald;
+                    font-size: Theme.font-xs;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // Divider
+        Rectangle {
+            height: 1px;
+            background: Theme.border-subtle;
+        }
+
+        // Balance Big Metric Block
+        HorizontalLayout {
+            alignment: space-between;
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                spacing: 2px;
+                alignment: center;
+
+                Text {
+                    text: "Available Account Credit";
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-xs;
+                }
+
+                Text {
+                    text: root.balance_text;
+                    color: Theme.text-primary;
+                    font-size: Theme.font-2xl;
+                    font-weight: 700;
+                }
+            }
+
+            VerticalLayout {
+                spacing: 2px;
+                alignment: center;
+
+                Text {
+                    text: root.monthly_usage_text;
+                    color: Theme.text-muted;
+                    font-size: Theme.font-xs;
+                    horizontal-alignment: right;
+                }
+            }
+        }
+
+        // Footer
+        HorizontalLayout {
+            alignment: space-between;
+
+            Text {
+                text: "DeepSeek API Platform";
+                color: Theme.text-muted;
+                font-size: Theme.font-xs;
+                vertical-alignment: center;
+            }
+
+            Rectangle {
+                border-radius: Theme.radius-sm;
+                background: ds_btn_touch.has-hover ? #1e3a8a : Theme.bg-button;
+                border-width: 1px;
+                border-color: ds_btn_touch.has-hover ? Theme.accent-blue : Theme.border-default;
+
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: 4px;
+                    padding-bottom: 4px;
+                    alignment: center;
+
+                    Text {
+                        text: "Manage Credit";
+                        color: ds_btn_touch.has-hover ? Theme.text-primary : Theme.accent-blue;
+                        font-size: Theme.font-xs;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                }
+
+                ds_btn_touch := TouchArea {
+                    mouse-cursor: MouseCursor.pointer;
+                    clicked => {
+                        root.top_up_clicked();
+                    }
+                }
+            }
+        }
+    }
+}

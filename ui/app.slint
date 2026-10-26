@@ -1,0 +1,345 @@
+// Antigravity Switchboard - Main Application Window
+// Native Rust + Slint Desktop Switchboard
+
+import { Theme } from "./theme.slint";
+import { ProgressBar } from "./progress_bar.slint";
+import { AccountCard, AccountData } from "./account_card.slint";
+import { HeroBar, ClaudeCard, DeepSeekCard } from "./provider_cards.slint";
+
+export { AccountData }
+
+export component AppWindow inherits Window {
+    title: "Antigravity Switchboard";
+    preferred-width: 960px;
+    preferred-height: 660px;
+    min-width: 900px;
+    min-height: 600px;
+    background: Theme.bg-app;
+
+    // Antigravity Accounts Data Model
+    in property <[AccountData]> accounts: [
+        {
+            id: "acc_1",
+            alias: "Primary Google",
+            email: "dev.primary@gmail.com",
+            tier: "Pro",
+            is_live: true,
+            is_selected: true,
+            session_quota_pct: 85.0,
+            session_quota_label: "85%",
+            weekly_quota_pct: 64.0,
+            weekly_quota_label: "64%",
+            reset_countdown: "2h 15m",
+            status_text: "Active",
+        },
+        {
+            id: "acc_2",
+            alias: "Work Workspace",
+            email: "work.account@company.com",
+            tier: "Pro",
+            is_live: false,
+            is_selected: false,
+            session_quota_pct: 42.0,
+            session_quota_label: "42%",
+            weekly_quota_pct: 28.0,
+            weekly_quota_label: "28%",
+            reset_countdown: "4h 50m",
+            status_text: "Standby",
+        },
+        {
+            id: "acc_3",
+            alias: "Personal Spare",
+            email: "spare.account@gmail.com",
+            tier: "Free",
+            is_live: false,
+            is_selected: false,
+            session_quota_pct: 95.0,
+            session_quota_label: "95%",
+            weekly_quota_pct: 88.0,
+            weekly_quota_label: "88%",
+            reset_countdown: "Ready",
+            status_text: "Standby",
+        }
+    ];
+
+    // Hero bar properties
+    in property <string> active_alias: "Primary Google";
+    in property <string> active_email: "dev.primary@gmail.com";
+    in property <string> client_status: "Client Running";
+    in property <bool> client_connected: true;
+
+    // Claude card properties
+    in property <string> claude_email: "claude.user@work.io";
+    in property <string> claude_tier: "Claude Pro / Max";
+    in property <float> claude_session_pct: 74.0;
+    in property <string> claude_session_label: "74%";
+    in property <float> claude_weekly_pct: 52.0;
+    in property <string> claude_weekly_label: "52%";
+    in property <string> claude_reset: "1h 45m";
+    in property <string> claude_tokens: "185k tokens ($2.10)";
+    in property <bool> claude_connected: true;
+
+    // DeepSeek card properties
+    in property <string> deepseek_balance: "$10.50 USD";
+    in property <string> deepseek_status: "Online / Ready";
+    in property <string> deepseek_tier: "Pay-as-you-go";
+    in property <string> deepseek_usage: "Month: $3.40";
+    in property <bool> deepseek_connected: true;
+
+    // Header & system properties
+    in property <string> app_status: "Switchboard Operational";
+    in property <bool> is_refreshing: false;
+
+    // Callbacks for Rust integration
+    callback refresh_clicked();
+    callback relaunch_client_clicked();
+    callback switch_account(string); // account id
+    callback select_account(string); // account id
+    callback claude_action_clicked();
+    callback deepseek_action_clicked();
+
+    VerticalLayout {
+        padding: Theme.spacing-lg;
+        spacing: Theme.spacing-md;
+
+        // 1. Top App Header
+        HorizontalLayout {
+            alignment: space-between;
+
+            // Logo & Title
+            HorizontalLayout {
+                spacing: Theme.spacing-md;
+                alignment: start;
+
+                // AG Brand Badge
+                Rectangle {
+                    width: 32px;
+                    height: 32px;
+                    border-radius: Theme.radius-sm;
+                    background: #0284c7;
+                    border-width: 1px;
+                    border-color: Theme.accent-sky;
+
+                    Text {
+                        text: "AG";
+                        color: Theme.text-primary;
+                        font-size: Theme.font-sm;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                VerticalLayout {
+                    spacing: 1px;
+                    alignment: center;
+
+                    Text {
+                        text: "Antigravity Switchboard";
+                        color: Theme.text-primary;
+                        font-size: Theme.font-lg;
+                        font-weight: 700;
+                    }
+
+                    Text {
+                        text: "Multi-Account Quota & Client Orchestrator";
+                        color: Theme.text-muted;
+                        font-size: Theme.font-xs;
+                    }
+                }
+            }
+
+            // Status Pill & Refresh Button
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                alignment: end;
+
+                // Live system indicator
+                Rectangle {
+                    background: Theme.bg-card;
+                    border-width: 1px;
+                    border-color: Theme.border-default;
+                    border-radius: Theme.radius-pill;
+
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        padding-top: 4px;
+                        padding-bottom: 4px;
+                        spacing: 6px;
+                        alignment: center;
+
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 6px;
+                                height: 6px;
+                                border-radius: 3px;
+                                background: Theme.accent-emerald;
+                            }
+                        }
+
+                        Text {
+                            text: root.app_status;
+                            color: Theme.text-secondary;
+                            font-size: Theme.font-xs;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                // Refresh Button
+                Rectangle {
+                    border-radius: Theme.radius-sm;
+                    background: refresh_touch.has-hover ? Theme.bg-button-hover : Theme.bg-button;
+                    border-width: 1px;
+                    border-color: refresh_touch.has-hover ? Theme.border-hover : Theme.border-default;
+
+                    animate background { duration: 150ms; }
+                    animate border-color { duration: 150ms; }
+
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        padding-top: 6px;
+                        padding-bottom: 6px;
+                        spacing: 4px;
+                        alignment: center;
+
+                        Text {
+                            text: root.is_refreshing ? "Refreshing..." : "Refresh";
+                            color: refresh_touch.has-hover ? Theme.accent-sky : Theme.text-primary;
+                            font-size: Theme.font-sm;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    refresh_touch := TouchArea {
+                        mouse-cursor: MouseCursor.pointer;
+                        clicked => {
+                            root.refresh_clicked();
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Active Client Hero Bar
+        HeroBar {
+            active_alias: root.active_alias;
+            active_email: root.active_email;
+            client_status: root.client_status;
+            is_connected: root.client_connected;
+            relaunch_clicked => {
+                root.relaunch_client_clicked();
+            }
+        }
+
+        // 3. Antigravity Accounts Section
+        VerticalLayout {
+            spacing: Theme.spacing-sm;
+
+            HorizontalLayout {
+                alignment: space-between;
+
+                Text {
+                    text: "ANTIGRAVITY ACCOUNTS";
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-xs;
+                    font-weight: 700;
+                }
+
+                Text {
+                    text: "Click card to select • Switch to change active client";
+                    color: Theme.text-muted;
+                    font-size: Theme.font-xs;
+                }
+            }
+
+            // Account Cards Row
+            HorizontalLayout {
+                spacing: Theme.spacing-md;
+
+                for account in root.accounts : AccountCard {
+                    horizontal-stretch: 1;
+
+                    account_id: account.id;
+                    alias: account.alias;
+                    email: account.email;
+                    tier: account.tier;
+                    is_live: account.is_live;
+                    is_selected: account.is_selected;
+                    session_quota_pct: account.session_quota_pct;
+                    session_quota_label: account.session_quota_label;
+                    weekly_quota_pct: account.weekly_quota_pct;
+                    weekly_quota_label: account.weekly_quota_label;
+                    reset_countdown: account.reset_countdown;
+                    status_text: account.status_text;
+
+                    switch_clicked => {
+                        root.switch_account(account.id);
+                    }
+                    card_selected => {
+                        root.select_account(account.id);
+                    }
+                }
+            }
+        }
+
+        // 4. Other Providers Section: Claude & DeepSeek
+        VerticalLayout {
+            spacing: Theme.spacing-sm;
+
+            HorizontalLayout {
+                alignment: space-between;
+
+                Text {
+                    text: "CONNECTED PROVIDERS";
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-xs;
+                    font-weight: 700;
+                }
+
+                Text {
+                    text: "External AI Quota & Account Balances";
+                    color: Theme.text-muted;
+                    font-size: Theme.font-xs;
+                }
+            }
+
+            HorizontalLayout {
+                spacing: Theme.spacing-md;
+
+                ClaudeCard {
+                    horizontal-stretch: 1;
+                    email: root.claude_email;
+                    tier: root.claude_tier;
+                    session_pct: root.claude_session_pct;
+                    session_label: root.claude_session_label;
+                    weekly_pct: root.claude_weekly_pct;
+                    weekly_label: root.claude_weekly_label;
+                    reset_countdown: root.claude_reset;
+                    token_usage_text: root.claude_tokens;
+                    is_connected: root.claude_connected;
+                    action_clicked => {
+                        root.claude_action_clicked();
+                    }
+                }
+
+                DeepSeekCard {
+                    horizontal-stretch: 1;
+                    balance_text: root.deepseek_balance;
+                    status_text: root.deepseek_status;
+                    tier_text: root.deepseek_tier;
+                    monthly_usage_text: root.deepseek_usage;
+                    is_connected: root.deepseek_connected;
+                    top_up_clicked => {
+                        root.deepseek_action_clicked();
+                    }
+                }
+            }
+        }
+    }
+}

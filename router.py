@@ -36,6 +36,17 @@ except ImportError:
 # Set default socket timeout as a defensive baseline
 socket.setdefaulttimeout(10.0)
 
+def _silent_subproc_kwargs():
+    """Returns subprocess kwargs that completely prevent console window popups on Windows."""
+    kwargs = {}
+    if os.name == "nt":
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+        si = subprocess.STARTUPINFO()
+        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        si.wShowWindow = 0
+        kwargs["startupinfo"] = si
+    return kwargs
+
 HOME = os.path.expanduser("~")
 APPDATA = os.environ.get("APPDATA") or os.path.join(HOME, "AppData", "Roaming")
 LOCALAPPDATA = os.environ.get("LOCALAPPDATA") or os.path.join(HOME, "AppData", "Local")
@@ -51,6 +62,12 @@ APP_STORAGE = os.environ.get("ANTIGRAVITY_APP_STORAGE") or os.path.join(APPDATA,
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = os.path.join(SCRIPT_DIR, ".usage_state.json")
 CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.json")
+
+# DeepSeek Harness platform account (balance / spend telemetry)
+DSH_DIR = os.path.join(HOME, ".dsh")
+DSH_CREDENTIALS = os.path.join(DSH_DIR, ".credentials.yaml")
+DEEPSEEK_PLATFORM_ORIGIN = os.environ.get("DEEPSEEK_PLATFORM_ORIGIN") or "https://platform.deepseek.com"
+DEEPSEEK_BALANCE_PATH = "/api/v0/users/get_user_summary"
 
 # ---------------------------------------------------------------------------
 # Strict Profile Name Sanitization & Path Traversal Prevention
@@ -344,6 +361,11 @@ def get_config():
             "enabled": True,
             "desktop_app_dir": "",
             "config_dir": "~/.claude"
+        },
+        "deepseek": {
+            "enabled": True,
+            "platform_origin": "https://platform.deepseek.com",
+            "refresh_interval_seconds": 60
         },
         "ui": {
             "refresh_interval_seconds": 60,
@@ -758,6 +780,78 @@ def find_antigravity_exe():
     return None
 
 
+def is_antigravity_running():
+    """Checks whether Antigravity.exe (IDE desktop GUI window) is currently running."""
+    if psutil:
+        try:
+            for p in psutil.process_iter(['name']):
+                if (p.info.get('name') or '').lower() == 'antigravity.exe':
+                    return True
+        except Exception:
+            pass
+    else:
+        try:
+            out = subprocess.check_output(
+                ["powershell", "-NoProfile", "-Command", "Get-Process -Name Antigravity -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"],
+                **_silent_subproc_kwargs()
+            ).decode().strip()
+            return bool(out)
+        except Exception:
+            pass
+    return False
+
+
+def is_language_server_running():
+    """Checks whether language_server.exe is currently running."""
+    if psutil:
+        try:
+            for p in psutil.process_iter(['name']):
+                if (p.info.get('name') or '').lower() == 'language_server.exe':
+                    return True
+        except Exception:
+            pass
+    else:
+        try:
+            out = subprocess.check_output(
+                ["powershell", "-NoProfile", "-Command", "Get-Process -Name language_server -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"],
+                **_silent_subproc_kwargs()
+            ).decode().strip()
+            return bool(out)
+        except Exception:
+            pass
+    return False
+
+
+def restart_language_server():
+    """Safely terminates only language_server.exe processes and invalidates cache,
+    leaving Antigravity IDE windows open. If Antigravity IDE is running,
+    it automatically respawns language_server with the updated credentials."""
+    if psutil:
+        for p in psutil.process_iter(['name']):
+            try:
+                pname = (p.info.get('name') or '').lower()
+                if pname == 'language_server.exe':
+                    p.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+    else:
+        subprocess.run(
+            ["powershell", "-NoProfile", "-Command", "Stop-Process -Name language_server -Force -ErrorAction SilentlyContinue"],
+            **_silent_subproc_kwargs()
+        )
+
+    _LS_INFO_CACHE["time"] = 0
+    _LS_INFO_CACHE["port"] = None
+    _LS_INFO_CACHE["csrf"] = None
+    _LS_INFO_CACHE["email"] = None
+    return True
+
+
+def restart_antigravity_ide():
+    """Alias for restart_antigravity_app."""
+    return restart_antigravity_app()
+
+
 def find_claude_paths():
     """Dynamically locates Claude for Windows package and local application directories across user setups."""
     cfg = get_config()
@@ -814,13 +908,13 @@ def launch_claude_desktop():
                     break
         if pkg_name:
             app_id = f"shell:AppsFolder\\{pkg_name}!Claude"
-            subprocess.Popen(["powershell", "-NoProfile", "-Command", f"Start-Process '{app_id}'"])
+            subprocess.Popen(["powershell", "-NoProfile", "-Command", f"Start-Process '{app_id}'"], **_silent_subproc_kwargs())
             return True
     except Exception:
         pass
 
     try:
-        subprocess.Popen(["cmd", "/c", "start", "claude:"], shell=False)
+        subprocess.Popen(["cmd", "/c", "start", "claude:"], shell=False, **_silent_subproc_kwargs())
         return True
     except Exception:
         return False
@@ -853,7 +947,10 @@ def restart_antigravity_app():
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
     else:
-        subprocess.run(["powershell", "-NoProfile", "-Command", "Stop-Process -Name Antigravity, language_server -Force -ErrorAction SilentlyContinue"])
+        subprocess.run(
+            ["powershell", "-NoProfile", "-Command", "Stop-Process -Name Antigravity, language_server -Force -ErrorAction SilentlyContinue"],
+            **_silent_subproc_kwargs()
+        )
 
     # 2. Wait until processes have fully released locks and sockets (up to 2.5s)
     t0 = time.time()
@@ -871,7 +968,8 @@ def restart_antigravity_app():
         else:
             try:
                 out = subprocess.check_output(
-                    ["powershell", "-NoProfile", "-Command", "Get-Process -Name Antigravity, language_server -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"]
+                    ["powershell", "-NoProfile", "-Command", "Get-Process -Name Antigravity, language_server -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"],
+                    **_silent_subproc_kwargs()
                 ).decode().strip()
                 if out:
                     alive = True
@@ -1005,7 +1103,7 @@ ANTIGRAVITY_CLIENT_ID = _decode_cred(b'kjmkjjljljockw.72))34h2hk69(?hio,.56502n=
 ANTIGRAVITY_CLIENT_SECRET = _decode_cred(b'\x1d\x15\x19\t\n\x02w\x11ob\x1c\r\x08nbl\x16>\x16\x10k7\x16\x18b)\x02\x19n l+\x1e\x1b<')
 
 
-_LS_INFO_CACHE = {"time": 0, "port": None, "csrf": None, "email": None}
+_LS_INFO_CACHE = {"time": 0, "port": None, "csrf": None, "email": None, "tier": None, "tier_id": None}
 
 
 def get_language_server_connection(max_age=8.0):
@@ -1043,7 +1141,7 @@ def get_language_server_connection(max_age=8.0):
     if not port or not csrf:
         try:
             cmd = ["powershell", "-NoProfile", "-Command", "Get-CimInstance Win32_Process -Filter \"Name = 'language_server.exe'\" | Select-Object ProcessId, CommandLine | ConvertTo-Json"]
-            raw = subprocess.check_output(cmd).decode('utf-8', errors='ignore').strip()
+            raw = subprocess.check_output(cmd, **_silent_subproc_kwargs()).decode('utf-8', errors='ignore').strip()
             if raw:
                 data = json.loads(raw)
                 if isinstance(data, list):
@@ -1054,7 +1152,7 @@ def get_language_server_connection(max_age=8.0):
                 if m_csrf:
                     csrf = m_csrf.group(1)
                     net_cmd = ["powershell", "-NoProfile", "-Command", f"Get-NetTCPConnection -OwningProcess {pid} -State Listen | Select-Object -ExpandProperty LocalPort"]
-                    ports = [int(p) for p in subprocess.check_output(net_cmd).decode().splitlines() if p.strip().isdigit()]
+                    ports = [int(p) for p in subprocess.check_output(net_cmd, **_silent_subproc_kwargs()).decode().splitlines() if p.strip().isdigit()]
                     if ports:
                         port = min(ports)
         except Exception:
@@ -1075,9 +1173,28 @@ def get_language_server_connection(max_age=8.0):
                 "x-codeium-csrf-token": csrf,
             }
             req = urllib.request.Request(url, data=b"{}", headers=headers)
-            res = urllib.request.urlopen(req, context=ctx, timeout=2.0)
-            body = json.loads(res.read().decode('utf-8'))
             _LS_INFO_CACHE["email"] = body.get("userStatus", {}).get("email")
+            tier_obj = body.get("userTier") or {}
+            if tier_obj.get("name"):
+                _LS_INFO_CACHE["tier"] = tier_obj.get("name")
+                _LS_INFO_CACHE["tier_id"] = tier_obj.get("id")
+            else:
+                # Fallback to GetLoadCodeAssist on local language server to extract paidTier / currentTier
+                try:
+                    lca_url = f"https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/GetLoadCodeAssist"
+                    lca_req = urllib.request.Request(lca_url, data=b"{}", headers=headers)
+                    lca_res = urllib.request.urlopen(lca_req, context=ctx, timeout=2.0)
+                    lca_data = json.loads(lca_res.read().decode('utf-8')).get("response", {})
+                    paid_t = lca_data.get("paidTier") or {}
+                    if paid_t.get("name") or paid_t.get("id"):
+                        _LS_INFO_CACHE["tier"] = paid_t.get("name") or "Google AI Pro"
+                        _LS_INFO_CACHE["tier_id"] = paid_t.get("id") or "g1-pro-tier"
+                    else:
+                        cur_t = lca_data.get("currentTier") or {}
+                        _LS_INFO_CACHE["tier"] = cur_t.get("name")
+                        _LS_INFO_CACHE["tier_id"] = cur_t.get("id")
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -1438,17 +1555,39 @@ def fetch_profile_tier(profile_name, auth_bearer=None):
         )
         with urllib.request.urlopen(req, context=ctx, timeout=3.0) as res:
             cd = json.loads(res.read().decode('utf-8'))
-            cur_id = cd.get("currentTier", {}).get("id", "free-tier")
-            paid_name = cd.get("paidTier", {}).get("name", "Google AI Pro")
-            if cur_id == "g1-pro-tier":
-                label = "Google AI Pro"
-            elif cur_id == "g1-ultra-tier":
+            paid_tier = cd.get("paidTier") or {}
+            current_tier = cd.get("currentTier") or {}
+
+            # 1. Check paidTier first (active Google One AI Premium / Google AI Pro / Ultra subscription)
+            if paid_tier and paid_tier.get("id"):
+                paid_id = paid_tier.get("id")
+                paid_name = paid_tier.get("name") or "Google AI Pro"
+                if paid_id == "g1-ultra-tier":
+                    label = "Google AI Ultra"
+                    upgrade_target = "Enterprise"
+                elif paid_id == "g1-pro-tier":
+                    label = "Google AI Pro"
+                    upgrade_target = "Google AI Ultra"
+                else:
+                    label = paid_name
+                    upgrade_target = "Google AI Ultra"
+                return {"tier_id": paid_id, "tier_label": label, "upgrade_target": upgrade_target}
+
+            # 2. Check currentTier if no active paidTier
+            cur_id = current_tier.get("id", "free-tier")
+            if cur_id == "g1-ultra-tier":
                 label = "Google AI Ultra"
+                upgrade_target = "Enterprise"
+            elif cur_id == "g1-pro-tier":
+                label = "Google AI Pro"
+                upgrade_target = "Google AI Ultra"
             elif cur_id == "standard-tier":
                 label = "Enterprise Standard"
+                upgrade_target = "Enterprise Plus"
             else:
                 label = "Free Tier"
-            return {"tier_id": cur_id, "tier_label": label, "upgrade_target": paid_name}
+                upgrade_target = "Google AI Pro"
+            return {"tier_id": cur_id, "tier_label": label, "upgrade_target": upgrade_target}
     except Exception:
         return {"tier_id": "free-tier", "tier_label": "Free Tier", "upgrade_target": "Google AI Pro"}
 
@@ -1487,6 +1626,10 @@ def fetch_profile_quota(profile_name):
                     except Exception:
                         pass
                     tier_info = fetch_profile_tier(safe_name)
+                    if _LS_INFO_CACHE.get("tier"):
+                        tier_info["tier_label"] = _LS_INFO_CACHE["tier"]
+                    if _LS_INFO_CACHE.get("tier_id"):
+                        tier_info["tier_id"] = _LS_INFO_CACHE["tier_id"]
                     parsed.update(tier_info)
                     CIRCUIT_BREAKER.record_success(safe_name)
                     return parsed
@@ -1574,176 +1717,146 @@ def fetch_profile_quota(profile_name):
 # Claude for Windows Status & Desktop App Telemetry
 # ---------------------------------------------------------------------------
 
+def _claude_tier_label(subscription_type=None, rate_limit_tier=None):
+    """Maps the live Claude subscription tier to a stable display label."""
+    labels = {
+        "default_claude_max_20x": "Claude Max (20x)",
+        "default_claude_max_5x": "Claude Max (5x)",
+        "default_claude_ai": "Claude Pro",
+        "default_raven": "Claude Free",
+        "default_raven_enterprise": "Claude Enterprise",
+    }
+    if rate_limit_tier and rate_limit_tier in labels:
+        return labels[rate_limit_tier]
+    st = (subscription_type or "").lower()
+    if st == "max":
+        return "Claude Max"
+    if st == "pro":
+        return "Claude Pro"
+    if st in ("free", "starter", "raven"):
+        return "Claude Free"
+    return "Claude"
+
+
+def _aggregate_claude_usage(last_model_usage):
+    """Aggregates per-model token/cost totals from ~/.claude.json lastModelUsage."""
+    agg = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "web_search": 0,
+        "cost_usd": 0.0,
+        "models": 0,
+    }
+    if not isinstance(last_model_usage, dict):
+        return agg
+    for usage in last_model_usage.values():
+        if not isinstance(usage, dict):
+            continue
+        try:
+            agg["input_tokens"] += int(usage.get("inputTokens", 0) or 0)
+            agg["output_tokens"] += int(usage.get("outputTokens", 0) or 0)
+            agg["cache_read_tokens"] += int(usage.get("cacheReadInputTokens", 0) or 0)
+            agg["cache_write_tokens"] += int(usage.get("cacheCreationInputTokens", 0) or 0)
+            agg["web_search"] += int(usage.get("webSearchRequests", 0) or 0)
+            agg["cost_usd"] += float(usage.get("costUSD", 0) or 0)
+            agg["models"] += 1
+        except (TypeError, ValueError):
+            continue
+    return agg
+
+
 def get_claude_status():
-    """Inspects official Claude for Windows App credentials, state, and real-time subscription quotas."""
-    claude_pkg_dir = find_claude_paths()
+    """Reads live Claude Code account, tier, and usage from the current native layout.
+
+    Identity now lives at the top level of ~/.claude.json (emailAddress, displayName,
+    billingType) and the live subscription tier in ~/.claude/.credentials.json
+    (claudeAiOauth.rateLimitTier / subscriptionType). The older desktop-app LevelDB and
+    plan-usage-history.json layout has migrated away and is no longer authoritative.
+    """
     claude_dir = os.path.join(HOME, ".claude")
     claude_json_path = os.path.join(HOME, ".claude.json")
     cred_path = os.path.join(claude_dir, ".credentials.json")
 
     status = {
         "detected": False,
-        "is_windows_app": False,
         "email": None,
         "display_name": None,
-        "subscription_type": "pro",
-        "rate_limit_tier": "default_claude_ai",
-        "tier_label": "Claude Pro",
-        "billing_type": "Stripe Subscription",
-        "org_name": None,
-        "org_id": None,
+        "account_uuid": None,
+        "subscription_type": None,
+        "rate_limit_tier": None,
+        "tier_label": "Claude",
+        "billing_type": None,
+        "plan_limits_end": None,
+        "window_days": None,
         "app_running": False,
         "app_pids": [],
-        "session_used_pct": 11,
-        "session_rem_pct": 89,
-        "weekly_used_pct": 92,
-        "weekly_rem_pct": 8,
-        "quota_5h_used": 11,
-        "quota_weekly_used": 92,
-        "quota_5h_pct": 89,
-        "quota_weekly_pct": 8,
-        "session_reset_desc": "Resets in 4 hr 36 min",
-        "weekly_reset_desc": "Resets Mon 7:00 PM",
-        "active_model": "Opus 5.5 High",
-        "antigravity_3p_5h": 100,
-        "antigravity_3p_weekly": 100,
-        "quota_source": "Claude for Windows Desktop App"
+        "usage": {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_read_tokens": 0,
+            "cache_write_tokens": 0,
+            "web_search": 0,
+            "cost_usd": 0.0,
+            "models": 0,
+        },
+        "quota_source": "Claude Code",
     }
 
-    if claude_pkg_dir and os.path.exists(claude_pkg_dir):
-        status["detected"] = True
-        status["is_windows_app"] = True
-
-    # 1. Read ~/.claude.json (authoritative account identity)
+    # 1. Account identity from ~/.claude.json (oauthAccount) plus per-project usage
     if os.path.exists(claude_json_path):
         try:
             cj = load_json(claude_json_path, {})
-            oa = cj.get("oauthAccount", {})
-            if oa:
+            oa = cj.get("oauthAccount") or {}
+            if oa.get("emailAddress"):
                 status["detected"] = True
-                status["email"] = oa.get("emailAddress") or status["email"]
-                status["display_name"] = oa.get("displayName") or oa.get("fullName") or status["display_name"]
-                status["org_name"] = oa.get("organizationName") or status["org_name"]
-                status["org_id"] = oa.get("organizationUuid") or status["org_id"]
-                if oa.get("billingType"):
-                    status["billing_type"] = "Stripe Subscription" if "stripe" in oa.get("billingType").lower() else oa.get("billingType")
-                if oa.get("organizationType") == "claude_pro" or oa.get("isPro"):
-                    status["subscription_type"] = "pro"
-                    status["tier_label"] = "Claude Pro"
+                status["email"] = oa.get("emailAddress")
+                status["display_name"] = oa.get("displayName")
+                status["account_uuid"] = oa.get("accountUuid")
+                status["billing_type"] = oa.get("billingType")
+
+            # Aggregate lastModelUsage across every known project directory
+            agg = dict(status["usage"])
+            projects = cj.get("projects") or {}
+            if isinstance(projects, dict):
+                for proj in projects.values():
+                    if not isinstance(proj, dict):
+                        continue
+                    lmu = proj.get("lastModelUsage")
+                    if not isinstance(lmu, dict):
+                        continue
+                    part = _aggregate_claude_usage(lmu)
+                    for key in agg:
+                        agg[key] += part[key]
+            status["usage"] = agg
         except Exception:
             pass
 
-    # 2. Read ~/.claude/.credentials.json as secondary fallback
-    if not status["email"] and os.path.exists(cred_path):
+    # 2. Live subscription tier from ~/.claude/.credentials.json
+    if os.path.exists(cred_path):
         try:
             creds = load_json(cred_path, {})
-            oauth = creds.get("claudeAiOauth", {})
+            oauth = creds.get("claudeAiOauth") or {}
             if oauth:
                 status["detected"] = True
-                rlt = oauth.get("rateLimitTier")
-                if rlt:
-                    status["rate_limit_tier"] = rlt
+                status["rate_limit_tier"] = oauth.get("rateLimitTier")
+                status["subscription_type"] = oauth.get("subscriptionType")
         except Exception:
             pass
 
-    # 3. Read live Quota from Claude Windows App Local Storage (LevelDB) with non-blocking shared reads
-    found_quota = False
-    if claude_pkg_dir:
-        ldb_dir = os.path.join(claude_pkg_dir, "Local Storage", "leveldb")
-        if os.path.exists(ldb_dir):
-            try:
-                files = sorted(
-                    glob.glob(os.path.join(ldb_dir, "*.ldb")) + glob.glob(os.path.join(ldb_dir, "*.log")),
-                    key=os.path.getmtime,
-                    reverse=True
-                )
-                for fpath in files:
-                    try:
-                        content = read_shared_file(fpath, max_bytes=512 * 1024, tail_only=True)
-                        if not content:
-                            continue
+    status["tier_label"] = _claude_tier_label(status.get("subscription_type"), status.get("rate_limit_tier"))
+    if status["billing_type"]:
+        status["billing_type"] = "Stripe Subscription" if "stripe" in str(status["billing_type"]).lower() else status["billing_type"]
 
-                        # Check explicit five_hour and seven_day fields first
-                        fh_m = re.findall(rb'"five_hour"[^}]+"utilization":\s*([0-9\.]+)', content)
-                        if fh_m:
-                            f_val = float(fh_m[-1].decode('ascii'))
-                            f_pct = round(f_val * 100) if f_val <= 1.0 else round(f_val)
-                            status["session_used_pct"] = f_pct
-                            status["session_rem_pct"] = max(0, 100 - f_pct)
-                            status["quota_5h_pct"] = status["session_rem_pct"]
-                            status["quota_5h_used"] = f_pct
-                            found_quota = True
-
-                        sd_m = re.findall(rb'"seven_day"[^}]+"utilization":\s*([0-9\.]+)', content)
-                        if sd_m:
-                            s_val = float(sd_m[-1].decode('ascii'))
-                            s_pct = round(s_val * 100) if s_val <= 1.0 else round(s_val)
-                            status["weekly_used_pct"] = s_pct
-                            status["weekly_rem_pct"] = max(0, 100 - s_pct)
-                            status["quota_weekly_pct"] = status["weekly_rem_pct"]
-                            status["quota_weekly_used"] = s_pct
-                            found_quota = True
-
-                        matches = re.findall(rb'"utilization":\s*([0-9\.]+)', content)
-                        if matches:
-                            for m in matches:
-                                val = float(m.decode('ascii'))
-                                pct = round(val * 100) if val <= 1.0 else round(val)
-                                if pct >= 50:
-                                    status["weekly_used_pct"] = max(status.get("weekly_used_pct", 92), pct)
-                                    status["weekly_rem_pct"] = max(0, 100 - status["weekly_used_pct"])
-                                    status["quota_weekly_pct"] = status["weekly_rem_pct"]
-                                    status["quota_weekly_used"] = status["weekly_used_pct"]
-                                    found_quota = True
-                                else:
-                                    status["session_used_pct"] = pct
-                                    status["session_rem_pct"] = max(0, 100 - pct)
-                                    status["quota_5h_pct"] = status["session_rem_pct"]
-                                    status["quota_5h_used"] = pct
-                                    found_quota = True
-
-                        if found_quota:
-                            status["quota_source"] = f"Desktop App LevelDB ({os.path.basename(fpath)})"
-                            break
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
-        # 4. Check plan-usage-history.json
-        hist_path = os.path.join(claude_pkg_dir, "plan-usage-history.json")
-        if os.path.exists(hist_path):
-            try:
-                hist_data = load_json(hist_path, {})
-                samples = hist_data.get("samples", [])
-                if samples:
-                    latest = samples[-1]
-                    u = latest.get("u", {})
-                    sd = u.get("sd")
-                    if sd is not None and not found_quota:
-                        s_pct = round(sd)
-                        status["weekly_used_pct"] = s_pct
-                        status["weekly_rem_pct"] = max(0, 100 - s_pct)
-                        status["quota_weekly_pct"] = status["weekly_rem_pct"]
-                        status["quota_weekly_used"] = s_pct
-                    fh = u.get("fh")
-                    if fh is not None and not found_quota:
-                        f_pct = round(fh)
-                        status["session_used_pct"] = f_pct
-                        status["session_rem_pct"] = max(0, 100 - f_pct)
-                        status["quota_5h_pct"] = status["session_rem_pct"]
-                        status["quota_5h_used"] = f_pct
-            except Exception:
-                pass
-
-    # 5. Check running Claude Windows App processes
+    # 3. Running Claude Code / desktop processes
     if psutil:
         try:
             for p in psutil.process_iter(['pid', 'name', 'exe']):
                 try:
                     pname = (p.info.get('name') or '').lower()
                     pexe = (p.info.get('exe') or '').lower()
-                    if pname == 'claude.exe' and ('windowsapps' in pexe or 'claude' in pexe):
+                    if pname == 'claude.exe' and ('claude' in pexe or 'windowsapps' in pexe):
                         status["app_pids"].append(p.info['pid'])
                 except Exception:
                     pass
@@ -1751,65 +1864,192 @@ def get_claude_status():
         except Exception:
             pass
 
-    # 6. Retrieve Antigravity 3P Claude limits (tracked in running Language Server)
-    try:
-        live_quota = fetch_live_quota()
-        if live_quota:
-            parsed = parse_quota_data(live_quota)
-            if parsed:
-                if parsed.get("claude_5h_pct") is not None:
-                    status["antigravity_3p_5h"] = parsed["claude_5h_pct"]
-                if parsed.get("claude_weekly_pct") is not None:
-                    status["antigravity_3p_weekly"] = parsed["claude_weekly_pct"]
-    except Exception:
-        pass
-
     return status
 
 
 def print_claude_status():
     cs = get_claude_status()
     print("=" * 70)
-    print("  Claude for Windows Subscription & Live Quota Status")
+    print("  Claude Code Subscription & Live Usage Status")
     print("=" * 70)
     if not cs.get("detected"):
-        print("\n  [Claude for Windows Not Found]")
-        print("  No Claude configuration found in WindowsApps or LocalStorage.")
+        print("\n  [Claude Code Not Found]")
+        print("  No Claude Code configuration found in ~/.claude.json or ~/.claude/.credentials.json.")
         print("=" * 70)
         return
 
-    cfg = get_config()
-    show_model_only = cfg.get("ui", {}).get("show_model_only_quota", False)
+    usage = cs.get("usage", {})
+    app_state = f"Running ({len(cs['app_pids'])} proc)" if cs.get("app_running") else "Closed / Ready"
 
-    app_state = f"Running (PID: {cs['app_pids'][0]}, {len(cs['app_pids'])} procs)" if cs.get("app_running") else "Ready / Closed"
     print("\n[Subscription Details]")
     print(f"  Account Email        : {cs['email'] or 'Unknown'}")
     if cs.get("display_name"):
         print(f"  User Name            : {cs['display_name']}")
-    print(f"  Subscription Tier    : {cs['tier_label']} [Stripe Pro]")
-    print(f"  Billing Type         : {cs['billing_type'] or 'Stripe Subscription'}")
-    if cs.get("org_name"):
-        print(f"  Organization         : {cs['org_name']}")
-    print(f"  Desktop App State    : {app_state}")
-    if show_model_only:
-        print(f"  Active Model         : {cs.get('active_model', 'Opus 5.5 High')}")
+    print(f"  Subscription Tier    : {cs['tier_label']}")
+    if cs.get("billing_type"):
+        print(f"  Billing Type         : {cs['billing_type']}")
+    print(f"  Claude Code State    : {app_state}")
+    if cs.get("window_days"):
+        print(f"  Plan Window          : {cs['window_days']} days")
 
-    s_used = cs.get('session_used_pct', 11)
-    s_rem = cs.get('session_rem_pct', 89)
-    w_used = cs.get('weekly_used_pct', 92)
-    w_rem = cs.get('weekly_rem_pct', 8)
-    w_warn = " [CRITICAL WARNING]" if w_used >= 85 else ""
+    print("\n[Live Model Usage (~/.claude.json lastModelUsage)]")
+    print(f"  - Input Tokens       : {usage.get('input_tokens', 0):,}")
+    print(f"  - Output Tokens      : {usage.get('output_tokens', 0):,}")
+    if usage.get("cache_read_tokens"):
+        print(f"  - Cache Read Tokens  : {usage.get('cache_read_tokens', 0):,}")
+    if usage.get("web_search"):
+        print(f"  - Web Search Requests: {usage.get('web_search', 0)}")
+    print(f"  - Total Cost         : ${usage.get('cost_usd', 0):.2f} USD")
+    print(f"  - Data Source        : {cs['quota_source']}")
 
-    print("\n[Claude for Windows Live Quotas (Official Desktop App)]")
-    print(f"  - Session Limit (5h) : {s_used:>2}% Used ({s_rem:>2}% Remaining) | {cs.get('session_reset_desc', 'Resets in 4 hr 36 min')}")
-    print(f"  - Weekly Window (7d) : {w_used:>2}% Used ({w_rem:>2}% Remaining)  | {cs.get('weekly_reset_desc', 'Resets Mon 7:00 PM')}{w_warn}")
-    if cs.get("quota_source"):
-        print(f"  - Quota Data Source  : {cs['quota_source']}")
+    print("\n" + "=" * 70)
 
-    if show_model_only:
-        print("\n[Antigravity 3P Claude Quota Allocation]")
-        print(f"  - 5-Hour Limit Remaining : {cs['antigravity_3p_5h']}%")
-        print(f"  - Weekly Limit Remaining : {cs['antigravity_3p_weekly']}%")
+
+# ---------------------------------------------------------------------------
+# DeepSeek Platform Balance & Spend (DeepSeek Harness Account Grant)
+# ---------------------------------------------------------------------------
+
+def _parse_simple_yaml(text):
+    """Parses the minimal YAML mapping used by ~/.dsh/.credentials.yaml (nested maps, plain scalars)."""
+    root = {}
+    stack = [(root, -1)]
+    for raw in text.splitlines():
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        indent = len(raw) - len(raw.lstrip(" "))
+        line = raw.strip()
+        if ":" not in line:
+            continue
+        key, _, val = line.partition(":")
+        key = key.strip()
+        val = val.strip()
+        while stack and indent <= stack[-1][1]:
+            stack.pop()
+        parent, _ = stack[-1]
+        if val == "":
+            child = {}
+            parent[key] = child
+            stack.append((child, indent))
+        else:
+            parent[key] = val
+    return root
+
+
+def read_deepseek_grant():
+    """Reads the DeepSeek Harness platform grant from ~/.dsh/.credentials.yaml (token + issuer only)."""
+    if not os.path.exists(DSH_CREDENTIALS):
+        return None
+    try:
+        with open(DSH_CREDENTIALS, "r", encoding="utf-8") as f:
+            data = _parse_simple_yaml(f.read())
+        rec = (data.get("records") or {}).get("deepseek-account-platform/default") or {}
+        payload = rec.get("payload") or {}
+        token = payload.get("token")
+        if not token:
+            return None
+        return {"token": token, "issuer": payload.get("issuer") or DEEPSEEK_PLATFORM_ORIGIN}
+    except Exception:
+        return None
+
+
+def _fmt_money(value):
+    """Formats a decimal string/float into a 2-decimal numeric string, or None when unavailable."""
+    if value is None:
+        return None
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return None
+
+
+def get_deepseek_status():
+    """Reads live DeepSeek platform balance and lifetime spend via the Harness account grant."""
+    status = {
+        "detected": False,
+        "signed_in": False,
+        "email": None,
+        "balances": [],        # [{currency, balance}] recharge wallets
+        "bonus_balances": [],  # [{currency, balance}] bonus wallets
+        "total_spend": [],     # [{currency, amount}] lifetime spend
+        "error": None,
+    }
+    grant = read_deepseek_grant()
+    if not grant or not grant.get("token"):
+        return status
+    status["detected"] = True
+    status["signed_in"] = True
+
+    tz_offset = -time.timezone if not time.localtime().tm_isdst else -time.altzone
+    headers = {
+        "x-dsh-auth-token": grant["token"],
+        "x-client-platform": "web",
+        "x-client-locale": "en_US",
+        "x-client-timezone-offset": str(tz_offset),
+        "x-client-version": "1",
+        "x-client-bundle-id": "",
+        "Accept": "application/json",
+        "User-Agent": "ai-os-account-router/1.0",
+    }
+    try:
+        ctx = ssl.create_default_context()
+        req = urllib.request.Request(DEEPSEEK_PLATFORM_ORIGIN + DEEPSEEK_BALANCE_PATH, headers=headers)
+        res = urllib.request.urlopen(req, context=ctx, timeout=15)
+        payload = json.loads(res.read().decode("utf-8"))
+        biz = (payload.get("data") or {}).get("biz_data") or {}
+        if biz.get("normal_wallets") is None and biz.get("bonus_wallets") is None:
+            status["error"] = "empty"
+            return status
+        for w in biz.get("normal_wallets") or []:
+            status["balances"].append({"currency": w.get("currency"), "balance": _fmt_money(w.get("balance"))})
+        for w in biz.get("bonus_wallets") or []:
+            status["bonus_balances"].append({"currency": w.get("currency"), "balance": _fmt_money(w.get("balance"))})
+        for c in biz.get("total_costs") or []:
+            status["total_spend"].append({"currency": c.get("currency"), "amount": _fmt_money(c.get("amount"))})
+    except urllib.error.HTTPError as e:
+        status["error"] = f"http_{e.code}"
+        if e.code in (401, 403):
+            status["signed_in"] = False
+    except Exception:
+        status["error"] = "network"
+    return status
+
+
+def print_deepseek_status():
+    ds = get_deepseek_status()
+    print("=" * 70)
+    print("  DeepSeek Platform Balance & Spend (DeepSeek Harness Account)")
+    print("=" * 70)
+    if not ds.get("detected"):
+        print("\n  [DeepSeek Not Signed In]")
+        print("  No DeepSeek Harness account grant found in ~/.dsh/.credentials.yaml.")
+        print("  Sign in to DeepSeek Harness, then re-run this command.")
+        print("=" * 70)
+        return
+    if ds.get("error"):
+        print(f"\n  [Query Failed] {ds['error']} — could not reach platform.deepseek.com.")
+        print("=" * 70)
+        return
+
+    print("\n[Account]")
+    print("  Provider             : DeepSeek Platform")
+    print("  Signed In            : Yes (Harness grant)")
+
+    print("\n[Balance]")
+    if ds.get("balances"):
+        for w in ds["balances"]:
+            print(f"  - Recharge Balance   : {w['balance']} {w['currency']}")
+    else:
+        print("  - Recharge Balance   : —")
+    if ds.get("bonus_balances"):
+        for w in ds["bonus_balances"]:
+            print(f"  - Bonus Balance      : {w['balance']} {w['currency']}")
+
+    print("\n[Lifetime Spend]")
+    if ds.get("total_spend"):
+        for c in ds["total_spend"]:
+            print(f"  - Total Spend        : {c['amount']} {c['currency']}")
+    else:
+        print("  - Total Spend        : —")
 
     print("\n" + "=" * 70)
 
@@ -1877,7 +2117,8 @@ def print_status():
                 w_reset_str = format_weekly_reset(q.get('weekly_reset'))
                 w_warn = " [CRITICAL WARNING]" if used_wk >= 85 else ""
 
-                print(f"      - Google AI Tier         : {tier_str} (Antigravity Core / Upgradeable to Pro)")
+                upg_target = q.get("upgrade_target", "Google AI Ultra") if (q and isinstance(q, dict)) else "Google AI Pro"
+                print(f"      - Google AI Tier         : {tier_str} (Target: {upg_target})")
                 if p_5h >= 100:
                     print("      - Session Limit (5h)     : 0% Used (100% Remaining) | Ready (Window starts on first prompt)")
                 else:
@@ -1900,28 +2141,37 @@ def print_status():
                 print(f"      - Google AI Tier         : {tier_str}")
                 print(f"      - Live Quota             : Not connected (Run: ai-switch auth {name})")
 
-    # Claude for Windows Section
+    # Claude Code Section
     cs = get_claude_status()
     if cs.get("detected"):
-        print("\n[Claude for Windows Subscription & Live Quotas (Official Desktop App)]")
-        app_str = f"Active ({len(cs['app_pids'])} procs)" if cs.get("app_running") else "Ready"
-        s_u = cs.get('session_used_pct', 11)
-        s_r = cs.get('session_rem_pct', 89)
-        w_u = cs.get('weekly_used_pct', 92)
-        w_r = cs.get('weekly_rem_pct', 8)
-        w_warn = " [CRITICAL WARNING]" if w_u >= 85 else ""
+        print("\n[Claude Code Subscription & Live Usage]")
+        app_str = f"Active ({len(cs['app_pids'])} proc)" if cs.get("app_running") else "Ready"
+        usage = cs.get("usage", {})
         print(f"  * Account Email       : {cs['email'] or 'Unknown'}")
-        print(f"  * Subscription Tier   : {cs['tier_label']} [Stripe Pro] | {cs['billing_type'] or 'Stripe Subscription'}")
-        print(f"  * Desktop App State   : {app_str}")
-        if show_model_only:
-            print(f"  * Active Model        : {cs.get('active_model', 'Opus 5.5 High')}")
-        print(f"  * Session Limit (5h)  : {s_u:>2}% Used ({s_r:>2}% Remaining) | {cs.get('session_reset_desc', 'Resets in 4 hr 36 min')}")
-        print(f"  * Weekly Window (7d)  : {w_u:>2}% Used ({w_r:>2}% Remaining)  | {cs.get('weekly_reset_desc', 'Resets Mon 7:00 PM')}{w_warn}")
+        print(f"  * Subscription Tier   : {cs['tier_label']}")
+        print(f"  * Claude Code State   : {app_str}")
+        print(f"  * Model Usage         : {usage.get('input_tokens', 0):,} in / {usage.get('output_tokens', 0):,} out tokens")
+        print(f"  * Total Cost          : ${usage.get('cost_usd', 0):.2f} USD")
+
+    # DeepSeek Platform Section
+    ds = get_deepseek_status()
+    if ds.get("detected"):
+        print("\n[DeepSeek Platform Balance & Spend]")
+        if ds.get("error"):
+            print(f"  * Status              : Query failed ({ds['error']})")
+        else:
+            for w in ds.get("balances"):
+                print(f"  * Recharge Balance    : {w['balance']} {w['currency']}")
+            for w in ds.get("bonus_balances"):
+                print(f"  * Bonus Balance       : {w['balance']} {w['currency']}")
+            for c in ds.get("total_spend"):
+                print(f"  * Lifetime Spend      : {c['amount']} {c['currency']}")
 
     print("\n" + "-" * 70)
     print("[Commands]")
     print("  ai-switch status               # View real-time quotas for all accounts")
-    print("  ai-switch claude               # View Claude for Windows subscription & app quota")
+    print("  ai-switch claude               # View Claude Code subscription & usage")
+    print("  ai-switch deepseek             # View DeepSeek platform balance & spend")
     print("  ai-switch 1 / 2 / 3            # Switch to account #1, #2, or #3 (or pass email)")
     print("  ai-switch 1 -r                 # Switch and instantly relaunch Antigravity")
     print("  ai-switch auth <1|2|3>         # 1-click browser OAuth connect for an account")
@@ -1958,7 +2208,8 @@ def main():
     subparsers = parser.add_subparsers(dest="command")
 
     subparsers.add_parser("status", help="Show accounts status and quotas")
-    subparsers.add_parser("claude", help="Show Claude Code subscription status, quotas, and active sessions")
+    subparsers.add_parser("claude", help="Show Claude Code subscription status and usage")
+    subparsers.add_parser("deepseek", help="Show DeepSeek platform balance and spend")
 
     save_p = subparsers.add_parser("save", help="Snapshot current Google account into a named profile")
     save_p.add_argument("name", help="Profile name, e.g. google_1, google_2, work")
@@ -1985,6 +2236,8 @@ def main():
         print_status()
     elif args.command == "claude":
         print_claude_status()
+    elif args.command == "deepseek":
+        print_deepseek_status()
     elif args.command == "save":
         save_current_profile(args.name)
     elif args.command == "switch":

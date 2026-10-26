@@ -10,6 +10,11 @@
     "desktop_app_dir": "",
     "config_dir": "~/.claude"
   },
+  "deepseek": {
+    "enabled": true,
+    "platform_origin": "https://platform.deepseek.com",
+    "refresh_interval_seconds": 60
+  },
   "ui": {
     "refresh_interval_seconds": 60,
     "theme": "modern_obsidian",
