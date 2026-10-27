@@ -107,6 +107,25 @@ fn refresh_ui_state(app: &AppWindow, preferred_selected_id: Option<&str>) {
         app.set_client_status("Client Disconnected".into());
         app.set_client_connected(false);
     }
+
+    // Synchronously populate Claude card from local telemetry on startup
+    let claude = claude::get_claude_status();
+    app.set_claude_email(if claude.email.is_empty() {
+        "Not Signed In".into()
+    } else {
+        claude.email.into()
+    });
+    app.set_claude_tier(claude.tier_label.clone().into());
+    app.set_claude_session_pct(claude.quota_5h_pct);
+    app.set_claude_session_label(format!("{:.0}%", claude.quota_5h_pct).into());
+    app.set_claude_weekly_pct(claude.quota_weekly_pct);
+    app.set_claude_weekly_label(format!("{:.0}%", claude.quota_weekly_pct).into());
+    app.set_claude_reset(claude.reset_5h_desc.into());
+    let is_subscription = claude.tier_label.contains("Pro") || claude.tier_label.contains("Max");
+    if is_subscription {
+        app.set_claude_tokens("".into());
+    }
+    app.set_claude_connected(claude.detected);
 }
 
 /// Triggers a full asynchronous multi-provider refresh across Google, Claude, and DeepSeek.
@@ -253,14 +272,18 @@ fn trigger_full_refresh(app_weak: slint::Weak<AppWindow>, preferred_selected_id:
                     } else {
                         claude.email.into()
                     });
-                    app.set_claude_tier(claude.tier_label.into());
+                    app.set_claude_tier(claude.tier_label.clone().into());
                     app.set_claude_session_pct(claude.quota_5h_pct);
                     app.set_claude_session_label(format!("{:.0}%", claude.quota_5h_pct).into());
                     app.set_claude_weekly_pct(claude.quota_weekly_pct);
                     app.set_claude_weekly_label(format!("{:.0}%", claude.quota_weekly_pct).into());
                     app.set_claude_reset(claude.reset_5h_desc.into());
 
-                    let tokens_text = if let Some(ref u) = claude.usage {
+                    // Subscription accounts (Claude Pro / Claude Max) track limits, not token balances
+                    let is_subscription = claude.tier_label.contains("Pro") || claude.tier_label.contains("Max");
+                    let tokens_text = if is_subscription {
+                        String::new()
+                    } else if let Some(ref u) = claude.usage {
                         let total_tokens = u.input_tokens + u.output_tokens;
                         let tok_str = if total_tokens >= 1_000_000 {
                             format!("{:.1}M", total_tokens as f64 / 1_000_000.0)
@@ -271,7 +294,7 @@ fn trigger_full_refresh(app_weak: slint::Weak<AppWindow>, preferred_selected_id:
                         };
                         format!("{} tokens (${:.2})", tok_str, u.cost_usd)
                     } else {
-                        "No usage recorded".to_string()
+                        String::new()
                     };
                     app.set_claude_tokens(tokens_text.into());
                     app.set_claude_connected(claude.detected);

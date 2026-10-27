@@ -195,7 +195,7 @@ export component ClaudeCard inherits Rectangle {
                     overflow: elide;
                 }
 
-                Rectangle {
+                if root.token_usage_text != "" : Rectangle {
                     background: Theme.bg-badge;
                     border-width: 1px;
                     border-color: Theme.border-default;
@@ -276,7 +276,7 @@ export component ClaudeCard inherits Rectangle {
                         alignment: end;
 
                         Text {
-                            text: root.reset_countdown == "Ready" ? "Ready" : "Reset: " + root.reset_countdown;
+                            text: (root.reset_countdown == "Ready" || root.reset_countdown == "Full Quota") ? "Ready" : "Reset: " + root.reset_countdown;
                             color: Theme.text-muted;
                             font-size: Theme.font-xs;
                             overflow: elide;

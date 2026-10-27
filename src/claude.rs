@@ -25,12 +25,14 @@ pub fn format_claude_tier_label(subscription_type: Option<&str>, rate_limit_tier
     }
     if let Some(st) = subscription_type {
         let st_lower = st.to_lowercase();
-        if st_lower == "max" {
+        if st_lower == "max" || st_lower.contains("max") {
             return "Claude Max".to_string();
-        } else if st_lower == "pro" {
+        } else if st_lower == "pro" || st_lower == "claude_pro" || st_lower.contains("pro") {
             return "Claude Pro".to_string();
         } else if matches!(st_lower.as_str(), "free" | "starter" | "raven") {
             return "Claude Free".to_string();
+        } else if st_lower.contains("enterprise") {
+            return "Claude Enterprise".to_string();
         }
     }
     "Claude Pro".to_string()
@@ -88,16 +90,65 @@ pub fn aggregate_model_usage(last_model_usage: &Value) -> (ClaudeUsage, usize) {
     (usage, model_count)
 }
 
+/// Reads live plan usage from Claude Desktop's local database (`plan-usage-history.json`).
+/// Returns `(remaining_5h_pct, remaining_weekly_pct, reset_desc)`.
+pub fn read_claude_plan_usage(local_app_data_path: &Path) -> Option<(f32, f32, String)> {
+    let claude_data_dir = local_app_data_path.join("Claude-Data");
+    if !claude_data_dir.exists() {
+        return None;
+    }
+
+    let entries = fs::read_dir(&claude_data_dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let usage_file = path.join("plan-usage-history.json");
+            if usage_file.exists() {
+                if let Ok(content) = fs::read_to_string(&usage_file) {
+                    if let Ok(val) = serde_json::from_str::<Value>(&content) {
+                        if let Some(samples) = val.get("samples").and_then(|s| s.as_array()) {
+                            let latest = samples.iter().max_by_key(|s| {
+                                s.get("t").and_then(|v| v.as_u64()).unwrap_or(0)
+                            });
+
+                            if let Some(s) = latest {
+                                if let Some(u) = s.get("u") {
+                                    let fh_used = u.get("fh").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+                                    let sd_used = u.get("sd").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+                                    let remaining_5h = (100.0 - fh_used).clamp(0.0, 100.0);
+                                    let remaining_weekly = (100.0 - sd_used).clamp(0.0, 100.0);
+                                    let reset_desc = if remaining_5h >= 100.0 {
+                                        "Ready".to_string()
+                                    } else {
+                                        "Active".to_string()
+                                    };
+                                    return Some((remaining_5h, remaining_weekly, reset_desc));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Reads live Claude Code account, subscription tier, and usage metrics from disk.
 pub fn get_claude_status() -> ClaudeStatus {
     get_claude_status_from_paths(
         &home_dir().join(".claude.json"),
         &home_dir().join(".claude").join(".credentials.json"),
+        &crate::router::local_app_data_dir(),
     )
 }
 
 /// Reads Claude status from explicit file paths (useful for unit testing and mocks).
-pub fn get_claude_status_from_paths(claude_json_path: &Path, cred_path: &Path) -> ClaudeStatus {
+pub fn get_claude_status_from_paths(
+    claude_json_path: &Path,
+    cred_path: &Path,
+    local_app_data_path: &Path,
+) -> ClaudeStatus {
     let mut status = ClaudeStatus {
         detected: false,
         email: String::new(),
@@ -114,16 +165,34 @@ pub fn get_claude_status_from_paths(claude_json_path: &Path, cred_path: &Path) -
     let mut subscription_type: Option<String> = None;
     let mut rate_limit_tier: Option<String> = None;
 
-    // 1. Account identity and per-project usage from ~/.claude.json
+    // 1. Account identity and subscription tier from ~/.claude.json
     if claude_json_path.exists() {
         match fs::read_to_string(claude_json_path) {
             Ok(content) => match serde_json::from_str::<Value>(&content) {
                 Ok(cj) => {
                     if let Some(oa) = cj.get("oauthAccount").and_then(|v| v.as_object()) {
+                        status.detected = true;
                         if let Some(email) = oa.get("emailAddress").and_then(|v| v.as_str()) {
                             if !email.is_empty() {
-                                status.detected = true;
                                 status.email = email.to_string();
+                            }
+                        }
+                        if let Some(rlt) = oa
+                            .get("organizationRateLimitTier")
+                            .or_else(|| oa.get("userRateLimitTier"))
+                            .and_then(|v| v.as_str())
+                        {
+                            if !rlt.is_empty() {
+                                rate_limit_tier = Some(rlt.to_string());
+                            }
+                        }
+                        if let Some(st) = oa
+                            .get("organizationType")
+                            .or_else(|| oa.get("billingType"))
+                            .and_then(|v| v.as_str())
+                        {
+                            if !st.is_empty() {
+                                subscription_type = Some(st.to_string());
                             }
                         }
                     }
@@ -158,18 +227,31 @@ pub fn get_claude_status_from_paths(claude_json_path: &Path, cred_path: &Path) -
         }
     }
 
-    // 2. Subscription tier from ~/.claude/.credentials.json
+    // 2. Fallback / live OAuth tokens from ~/.claude/.credentials.json
+    // Only trust .credentials.json tier if it has an active, non-empty access token or if no tier was found in ~/.claude.json
     if cred_path.exists() {
         match fs::read_to_string(cred_path) {
             Ok(content) => match serde_json::from_str::<Value>(&content) {
                 Ok(creds) => {
                     if let Some(oauth) = creds.get("claudeAiOauth").and_then(|v| v.as_object()) {
-                        status.detected = true;
-                        if let Some(rlt) = oauth.get("rateLimitTier").and_then(|v| v.as_str()) {
-                            rate_limit_tier = Some(rlt.to_string());
-                        }
-                        if let Some(st) = oauth.get("subscriptionType").and_then(|v| v.as_str()) {
-                            subscription_type = Some(st.to_string());
+                        let has_valid_token = oauth
+                            .get("accessToken")
+                            .and_then(|v| v.as_str())
+                            .map(|s| !s.trim().is_empty())
+                            .unwrap_or(false);
+
+                        if has_valid_token || rate_limit_tier.is_none() {
+                            status.detected = true;
+                            if let Some(rlt) = oauth.get("rateLimitTier").and_then(|v| v.as_str()) {
+                                if !rlt.is_empty() {
+                                    rate_limit_tier = Some(rlt.to_string());
+                                }
+                            }
+                            if let Some(st) = oauth.get("subscriptionType").and_then(|v| v.as_str()) {
+                                if !st.is_empty() {
+                                    subscription_type = Some(st.to_string());
+                                }
+                            }
                         }
                     }
                 }
@@ -184,14 +266,25 @@ pub fn get_claude_status_from_paths(claude_json_path: &Path, cred_path: &Path) -
         rate_limit_tier.as_deref(),
     );
 
+    // 3. Read live plan usage meters from local database
+    if let Some((rem_5h, rem_weekly, reset_desc)) = read_claude_plan_usage(local_app_data_path) {
+        status.session_used_pct = 100.0 - rem_5h;
+        status.weekly_used_pct = 100.0 - rem_weekly;
+        status.quota_5h_pct = rem_5h;
+        status.quota_weekly_pct = rem_weekly;
+        status.reset_5h_desc = reset_desc;
+    }
+
     // Check if Claude process is active
     if is_claude_process_running() {
-        status.reset_5h_desc = "Active".to_string();
+        if status.reset_5h_desc == "Ready" {
+            status.reset_5h_desc = "Active".to_string();
+        }
     }
 
     debug!(
-        "Discovered Claude status: detected={}, email={}, tier={}",
-        status.detected, status.email, status.tier_label
+        "Discovered Claude status: detected={}, email={}, tier={}, 5h={:.0}%, weekly={:.0}%",
+        status.detected, status.email, status.tier_label, status.quota_5h_pct, status.quota_weekly_pct
     );
 
     status
@@ -296,6 +389,7 @@ mod tests {
 
         let cred_content = serde_json::json!({
             "claudeAiOauth": {
+                "accessToken": "sk-ant-test-token-123",
                 "rateLimitTier": "default_claude_max_20x",
                 "subscriptionType": "max"
             }
@@ -304,7 +398,7 @@ mod tests {
         fs::write(&json_path, claude_json_content.to_string()).unwrap();
         fs::write(&cred_path, cred_content.to_string()).unwrap();
 
-        let status = get_claude_status_from_paths(&json_path, &cred_path);
+        let status = get_claude_status_from_paths(&json_path, &cred_path, &temp_dir);
         assert!(status.detected);
         assert_eq!(status.email, "dev.test@anthropic.com");
         assert_eq!(status.tier_label, "Claude Max (20x)");
@@ -318,8 +412,71 @@ mod tests {
     }
 
     #[test]
+    fn test_oauth_account_pro_tier_precedence_and_plan_usage() {
+        let temp_dir = std::env::temp_dir().join(format!("claude_pro_test_{}", std::process::id()));
+        let _ = fs::create_dir_all(&temp_dir);
+
+        let json_path = temp_dir.join(".claude.json");
+        let cred_path = temp_dir.join(".credentials.json");
+
+        // Real structure from ~/.claude.json
+        let claude_json_content = serde_json::json!({
+            "oauthAccount": {
+                "emailAddress": "dropshipmk4@gmail.com",
+                "organizationType": "claude_pro",
+                "organizationRateLimitTier": "default_claude_ai",
+                "billingType": "stripe_subscription"
+            }
+        });
+
+        // Stale .credentials.json with empty token
+        let cred_content = serde_json::json!({
+            "claudeAiOauth": {
+                "accessToken": "",
+                "refreshToken": "",
+                "rateLimitTier": "default_claude_max_20x",
+                "subscriptionType": "max"
+            }
+        });
+
+        // Mock Claude Desktop plan-usage-history.json
+        let claude_data_dir = temp_dir.join("Claude-Data").join("claude_mock_instance");
+        let _ = fs::create_dir_all(&claude_data_dir);
+        let plan_usage_content = serde_json::json!({
+            "version": 2,
+            "samples": [
+                {
+                    "t": 1793130600000_u64,
+                    "org": "93e4f26c-cbac-493c-b684-3f505f2ac139",
+                    "u": {
+                        "fh": 0,
+                        "sd": 28
+                    }
+                }
+            ]
+        });
+        fs::write(claude_data_dir.join("plan-usage-history.json"), plan_usage_content.to_string()).unwrap();
+
+        fs::write(&json_path, claude_json_content.to_string()).unwrap();
+        fs::write(&cred_path, cred_content.to_string()).unwrap();
+
+        let status = get_claude_status_from_paths(&json_path, &cred_path, &temp_dir);
+        assert!(status.detected);
+        assert_eq!(status.email, "dropshipmk4@gmail.com");
+        // Must correctly resolve to Claude Pro despite stale default_claude_max_20x in creds
+        assert_eq!(status.tier_label, "Claude Pro");
+        // Quota: 100 - 0 = 100% for 5h, 100 - 28 = 72% for weekly
+        assert_eq!(status.quota_5h_pct, 100.0);
+        assert_eq!(status.quota_weekly_pct, 72.0);
+        assert_eq!(status.reset_5h_desc, "Ready");
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
     fn test_live_claude_status_does_not_panic() {
         let status = get_claude_status();
-        println!("Live Claude status detected: {}, tier: {}", status.detected, status.tier_label);
+        println!("Live Claude status detected: {}, tier: {}, 5h={:.0}%, weekly={:.0}%", 
+            status.detected, status.tier_label, status.quota_5h_pct, status.quota_weekly_pct);
     }
 }

@@ -53,6 +53,14 @@ pub fn app_storage_path() -> PathBuf {
     appdata.join("Antigravity").join("app_storage.json")
 }
 
+/// Local AppData directory (`%LOCALAPPDATA%` or `~/AppData/Local`).
+pub fn local_app_data_dir() -> PathBuf {
+    if let Ok(p) = std::env::var("LOCALAPPDATA") {
+        return PathBuf::from(p);
+    }
+    home_dir().join("AppData").join("Local")
+}
+
 /// State tracking file (`.usage_state.json`) in repository root or current directory.
 pub fn state_file_path() -> PathBuf {
     if let Ok(p) = std::env::var("ANTIGRAVITY_STATE_FILE") {
