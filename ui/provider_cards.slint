@@ -62,17 +62,10 @@ export component HeroBar inherits Rectangle {
             }
 
             Text {
-                text: root.active_alias;
+                text: root.active_email;
                 color: Theme.text-primary;
                 font-size: Theme.font-sm;
                 font-weight: 700;
-                vertical-alignment: center;
-            }
-
-            Text {
-                text: "(" + root.active_email + ")";
-                color: Theme.text-muted;
-                font-size: Theme.font-xs;
                 vertical-alignment: center;
                 overflow: elide;
             }

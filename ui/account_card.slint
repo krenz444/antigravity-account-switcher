@@ -94,17 +94,10 @@ export component AccountCard inherits Rectangle {
                 }
 
                 Text {
-                    text: root.alias;
+                    text: root.email;
                     color: Theme.text-primary;
                     font-size: Theme.font-sm;
                     font-weight: 700;
-                    vertical-alignment: center;
-                }
-
-                Text {
-                    text: root.email;
-                    color: Theme.text-muted;
-                    font-size: Theme.font-xs;
                     vertical-alignment: center;
                     overflow: elide;
                 }

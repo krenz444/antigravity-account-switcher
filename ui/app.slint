@@ -23,7 +23,7 @@ export component AppWindow inherits Window {
     in property <[AccountData]> accounts: [
         {
             id: "acc_1",
-            alias: "Primary Google",
+            alias: "dev.primary@gmail.com",
             email: "dev.primary@gmail.com",
             tier: "Pro",
             is_live: true,
@@ -38,7 +38,7 @@ export component AppWindow inherits Window {
         },
         {
             id: "acc_2",
-            alias: "Work Workspace",
+            alias: "work.account@company.com",
             email: "work.account@company.com",
             tier: "Pro",
             is_live: false,
@@ -53,7 +53,7 @@ export component AppWindow inherits Window {
         },
         {
             id: "acc_3",
-            alias: "Personal Spare",
+            alias: "spare.account@gmail.com",
             email: "spare.account@gmail.com",
             tier: "Free",
             is_live: false,
@@ -68,7 +68,7 @@ export component AppWindow inherits Window {
         },
         {
             id: "acc_4",
-            alias: "Lab / Backup",
+            alias: "lab.account@gmail.com",
             email: "lab.account@gmail.com",
             tier: "Pro",
             is_live: false,
@@ -84,7 +84,7 @@ export component AppWindow inherits Window {
     ];
 
     // Hero bar properties
-    in property <string> active_alias: "Primary Google";
+    in property <string> active_alias: "dev.primary@gmail.com";
     in property <string> active_email: "dev.primary@gmail.com";
     in property <string> client_status: "Client Running";
     in property <bool> client_connected: true;

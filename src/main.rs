@@ -49,10 +49,10 @@ fn refresh_ui_state(app: &AppWindow, preferred_selected_id: Option<&str>) {
         }
 
         if p.is_live {
-            active_alias = if p.alias.is_empty() {
+            active_alias = if p.email.is_empty() {
                 p.name.clone()
             } else {
-                p.alias.clone()
+                p.email.clone()
             };
             active_email = p.email.clone();
         }
@@ -66,10 +66,10 @@ fn refresh_ui_state(app: &AppWindow, preferred_selected_id: Option<&str>) {
 
         let data = AccountData {
             id: p.name.clone().into(),
-            alias: (if p.alias.is_empty() {
+            alias: (if p.email.is_empty() {
                 p.name.clone()
             } else {
-                p.alias.clone()
+                p.email.clone()
             })
             .into(),
             email: p.email.clone().into(),
@@ -182,10 +182,10 @@ fn trigger_full_refresh(app_weak: slint::Weak<AppWindow>, preferred_selected_id:
                         }
 
                         if p.is_live {
-                            active_alias = if p.alias.is_empty() {
+                            active_alias = if p.email.is_empty() {
                                 p.name.clone()
                             } else {
-                                p.alias.clone()
+                                p.email.clone()
                             };
                             active_email = p.email.clone();
                         }
@@ -206,10 +206,10 @@ fn trigger_full_refresh(app_weak: slint::Weak<AppWindow>, preferred_selected_id:
 
                         let data = AccountData {
                             id: p.name.clone().into(),
-                            alias: (if p.alias.is_empty() {
+                            alias: (if p.email.is_empty() {
                                 p.name.clone()
                             } else {
-                                p.alias.clone()
+                                p.email.clone()
                             })
                             .into(),
                             email: p.email.clone().into(),
