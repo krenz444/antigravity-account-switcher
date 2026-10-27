@@ -1331,9 +1331,7 @@ def authenticate_profile(profile_name):
             pass
 
     safe_name, prof_dir = validate_profile_path(profile_name)
-    if not os.path.exists(prof_dir):
-        print(f"[ERROR] Profile '{safe_name}' does not exist.")
-        return False
+    os.makedirs(prof_dir, exist_ok=True)
 
     meta = load_json(os.path.join(prof_dir, "profile_meta.json"), {})
     email = meta.get("email")
@@ -1497,9 +1495,14 @@ def authenticate_profile(profile_name):
     save_json(os.path.join(prof_dir, "oauth_creds.json"), oauth_data)
 
     new_email = extract_email_from_jwt(id_token) or email
+    meta["name"] = safe_name
     meta["email"] = new_email
+    if not meta.get("alias"):
+        meta["alias"] = f"Profile {safe_name.split('_')[-1] if '_' in safe_name else safe_name}"
     meta["saved_at"] = dt.datetime.now().isoformat()
     save_json(os.path.join(prof_dir, "profile_meta.json"), meta)
+    if new_email:
+        save_json(os.path.join(prof_dir, "google_accounts.json"), {"active": new_email, "old": []})
 
     CIRCUIT_BREAKER.reset(safe_name)
     print(f"[OK] Successfully authenticated and saved Antigravity credentials for '{safe_name}' ({new_email})!")
