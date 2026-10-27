@@ -11,9 +11,9 @@ export { AccountData }
 export component AppWindow inherits Window {
     title: "Antigravity Switchboard";
     icon: @image-url("../app_icon.png");
-    preferred-width: 920px;
+    preferred-width: 1040px;
     preferred-height: 520px;
-    min-width: 860px;
+    min-width: 880px;
     min-height: 480px;
     background: Theme.bg-app;
 
@@ -54,6 +54,21 @@ export component AppWindow inherits Window {
             alias: "Personal Spare",
             email: "spare.account@gmail.com",
             tier: "Free",
+            is_live: false,
+            is_selected: false,
+            session_quota_pct: 100.0,
+            session_quota_label: "100%",
+            weekly_quota_pct: 100.0,
+            weekly_quota_label: "100%",
+            reset_countdown: "Full Quota",
+            weekly_reset_text: "Resets Mon 7:00 PM",
+            status_text: "Standby",
+        },
+        {
+            id: "acc_4",
+            alias: "Lab / Backup",
+            email: "lab.account@gmail.com",
+            tier: "Pro",
             is_live: false,
             is_selected: false,
             session_quota_pct: 100.0,

@@ -297,6 +297,50 @@ fn trigger_full_refresh(app_weak: slint::Weak<AppWindow>, preferred_selected_id:
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    // 0. Process CLI utility commands (save/snapshot/list/help)
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 1 {
+        #[cfg(windows)]
+        unsafe {
+            #[link(name = "kernel32")]
+            extern "system" {
+                fn AttachConsole(dw_process_id: u32) -> i32;
+            }
+            AttachConsole(0xFFFFFFFF);
+        }
+
+        let cmd = args[1].to_lowercase();
+        if cmd == "save" || cmd == "snapshot" || cmd == "--save" || cmd == "--snapshot" {
+            let name = args.get(2).map(|s| s.as_str()).unwrap_or("google_4");
+            let alias = args.get(3).map(|s| s.as_str());
+            match router::save_current_profile(name, alias) {
+                Ok(_) => {
+                    println!("[OK] Successfully captured active Google account as profile '{}' (alias: {:?})", name, alias);
+                    return Ok(());
+                }
+                Err(e) => {
+                    eprintln!("[ERROR] Failed to save profile '{}': {}", name, e);
+                    return Err(e);
+                }
+            }
+        } else if cmd == "list" || cmd == "--list" {
+            let profiles = router::list_profiles();
+            println!("Discovered {} saved profile(s):", profiles.len());
+            for p in profiles {
+                let status = if p.is_live { "ACTIVE" } else { "standby" };
+                println!("  - [{}] {} ({}) [{}]", p.name, p.alias, p.email, status);
+            }
+            return Ok(());
+        } else if cmd == "help" || cmd == "--help" || cmd == "-h" {
+            println!("Antigravity Switchboard v2.0.0");
+            println!("Usage:");
+            println!("  antigravity-switchboard.exe                   # Launch native desktop GUI");
+            println!("  antigravity-switchboard.exe list              # List all discovered profiles");
+            println!("  antigravity-switchboard.exe save <name> [alias] # Snapshot active account into a profile slot");
+            return Ok(());
+        }
+    }
+
     // 1. Initialize logger
     if std::env::var("RUST_LOG").is_err() {
         std::env::set_var("RUST_LOG", "info");
