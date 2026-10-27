@@ -1,5 +1,6 @@
 // Antigravity Switchboard - Account Card Component
-// High-density card displaying Antigravity Google Account state, session & weekly quotas
+// High-density horizontal row card for vertical list layout
+// Displays Antigravity Google Account identity, switch action, session & weekly quotas
 
 import { Theme } from "./theme.slint";
 import { ProgressBar } from "./progress_bar.slint";
@@ -44,7 +45,7 @@ export component AccountCard inherits Rectangle {
     border-color: root.is_live ? Theme.border-active :
                   root.is_selected ? Theme.border-selected :
                   card_touch.has-hover ? Theme.border-hover : Theme.border-default;
-    border-radius: Theme.radius-lg;
+    border-radius: Theme.radius-md;
     clip: true;
 
     animate background { duration: 150ms; }
@@ -57,45 +58,58 @@ export component AccountCard inherits Rectangle {
         }
     }
 
+    // Left accent strip for live active account
+    if root.is_live : Rectangle {
+        x: 0;
+        y: 0;
+        width: 3px;
+        height: parent.height;
+        background: Theme.accent-emerald;
+    }
+
     VerticalLayout {
         padding-left: Theme.spacing-md;
         padding-right: Theme.spacing-md;
-        padding-top: Theme.spacing-sm;
-        padding-bottom: Theme.spacing-sm;
-        spacing: 6px;
+        padding-top: 7px;
+        padding-bottom: 7px;
+        spacing: 5px;
 
-        // Card Header
+        // Top line: Identity & Switch Button
         HorizontalLayout {
-            spacing: Theme.spacing-xs;
             alignment: space-between;
 
-            // Account Identity
-            VerticalLayout {
-                spacing: 1px;
-                horizontal-stretch: 1;
+            // Identity Cluster
+            HorizontalLayout {
+                spacing: 7px;
+
+                // Live status dot
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 7px;
+                        height: 7px;
+                        border-radius: 3.5px;
+                        background: root.is_live ? Theme.accent-emerald : #475569;
+                    }
+                }
 
                 Text {
                     text: root.alias;
                     color: Theme.text-primary;
-                    font-size: Theme.font-base;
+                    font-size: Theme.font-sm;
                     font-weight: 700;
-                    overflow: elide;
+                    vertical-alignment: center;
                 }
 
                 Text {
                     text: root.email;
                     color: Theme.text-muted;
                     font-size: Theme.font-xs;
+                    vertical-alignment: center;
                     overflow: elide;
                 }
-            }
 
-            // Status Badges
-            HorizontalLayout {
-                spacing: 4px;
-                alignment: end;
-
-                // Tier Badge
+                // Tier badge
                 Rectangle {
                     background: Theme.bg-badge;
                     border-width: 1px;
@@ -119,7 +133,7 @@ export component AccountCard inherits Rectangle {
                     }
                 }
 
-                // Live Active Indicator
+                // LIVE Pill
                 if root.is_live : Rectangle {
                     background: #064e3b;
                     border-width: 1px;
@@ -131,21 +145,11 @@ export component AccountCard inherits Rectangle {
                         padding-right: 5px;
                         padding-top: 1px;
                         padding-bottom: 1px;
-                        spacing: 4px;
-
-                        VerticalLayout {
-                            alignment: center;
-                            Rectangle {
-                                width: 5px;
-                                height: 5px;
-                                border-radius: 2.5px;
-                                background: Theme.accent-emerald;
-                            }
-                        }
+                        alignment: center;
 
                         Text {
                             text: "LIVE";
-                            color: #6ee7b7; // 6.38:1 WCAG AA contrast against #064e3b
+                            color: #6ee7b7;
                             font-size: Theme.font-xs;
                             font-weight: 700;
                             vertical-alignment: center;
@@ -153,139 +157,127 @@ export component AccountCard inherits Rectangle {
                     }
                 }
             }
-        }
 
-        // Subtle divider
-        Rectangle {
-            height: 1px;
-            background: Theme.border-subtle;
-        }
+            // Switch Action Button
+            Rectangle {
+                width: 80px;
+                height: 22px;
+                border-radius: Theme.radius-sm;
+                background: root.is_live ? #064e3b :
+                            btn_touch.has-hover ? Theme.bg-button-hover : Theme.bg-button;
+                border-width: 1px;
+                border-color: root.is_live ? Theme.accent-emerald :
+                              btn_touch.has-hover ? Theme.border-hover : Theme.border-default;
 
-        // Meter 1: 5-Hour Session Quota
-        VerticalLayout {
-            spacing: 2px;
-
-            HorizontalLayout {
-                alignment: space-between;
-
-                Text {
-                    text: "5h Limit";
-                    color: Theme.text-secondary;
-                    font-size: Theme.font-xs;
-                    font-weight: 500;
-                }
+                animate background { duration: 150ms; }
+                animate border-color { duration: 150ms; }
 
                 HorizontalLayout {
-                    spacing: 4px;
-                    alignment: end;
-
-                    Text {
-                        text: (root.reset_countdown == "Ready" || root.reset_countdown == "Full Quota") ? "Full Quota" : "Reset: " + root.reset_countdown;
-                        color: (root.reset_countdown == "Ready" || root.reset_countdown == "Full Quota") ? Theme.accent-emerald : Theme.accent-sky;
-                        font-size: Theme.font-xs;
-                        font-weight: (root.reset_countdown == "Ready" || root.reset_countdown == "Full Quota") ? 600 : 400;
-                        overflow: elide;
-                    }
-
-                    Text {
-                        text: root.session_quota_label;
-                        color: Theme.text-primary;
-                        font-size: Theme.font-xs;
-                        font-weight: 700;
-                    }
-                }
-            }
-
-            ProgressBar {
-                progress: root.session_quota_pct;
-            }
-        }
-
-        // Meter 2: Weekly Quota
-        VerticalLayout {
-            spacing: 2px;
-
-            HorizontalLayout {
-                alignment: space-between;
-
-                Text {
-                    text: "Weekly";
-                    color: Theme.text-secondary;
-                    font-size: Theme.font-xs;
-                    font-weight: 500;
-                }
-
-                HorizontalLayout {
-                    spacing: 4px;
-                    alignment: end;
-
-                    Text {
-                        text: root.weekly_reset_text;
-                        color: Theme.text-muted;
-                        font-size: Theme.font-xs;
-                        overflow: elide;
-                    }
-
-                    Text {
-                        text: root.weekly_quota_label;
-                        color: Theme.text-primary;
-                        font-size: Theme.font-xs;
-                        font-weight: 700;
-                    }
-                }
-            }
-
-            ProgressBar {
-                progress: root.weekly_quota_pct;
-            }
-        }
-
-        // Action button
-        Rectangle {
-            border-radius: Theme.radius-sm;
-            background: root.is_live ? #064e3b :
-                        btn_touch.has-hover ? Theme.bg-button-hover : Theme.bg-button;
-            border-width: 1px;
-            border-color: root.is_live ? Theme.accent-emerald :
-                          btn_touch.has-hover ? Theme.accent-sky : Theme.border-default;
-
-            animate background { duration: 150ms; }
-            animate border-color { duration: 150ms; }
-
-            HorizontalLayout {
-                padding-left: Theme.spacing-sm;
-                padding-right: Theme.spacing-sm;
-                padding-top: 5px;
-                padding-bottom: 5px;
-                alignment: center;
-                spacing: 6px;
-
-                if root.is_live : VerticalLayout {
                     alignment: center;
-                    Rectangle {
-                        width: 6px;
-                        height: 6px;
-                        border-radius: 3px;
-                        background: Theme.accent-emerald;
+
+                    Text {
+                        text: root.is_live ? "ACTIVE" : "SWITCH";
+                        color: root.is_live ? #6ee7b7 :
+                               btn_touch.has-hover ? Theme.accent-sky : Theme.text-primary;
+                        font-size: Theme.font-xs;
+                        font-weight: 700;
+                        vertical-alignment: center;
                     }
                 }
 
-                Text {
-                    text: root.is_live ? "Active Account" : "Switch to Account";
-                    color: root.is_live ? #6ee7b7 :
-                           btn_touch.has-hover ? Theme.accent-sky : Theme.text-primary;
-                    font-size: Theme.font-sm;
-                    font-weight: 600;
-                    vertical-alignment: center;
+                btn_touch := TouchArea {
+                    mouse-cursor: root.is_live ? MouseCursor.default : MouseCursor.pointer;
+                    clicked => {
+                        if !root.is_live {
+                            root.switch_clicked();
+                        }
+                    }
+                }
+            }
+        }
+
+        // Bottom line: Dual Limit Meters side-by-side
+        HorizontalLayout {
+            spacing: Theme.spacing-md;
+
+            // Meter 1: 5-Hour Session Quota
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 2px;
+
+                HorizontalLayout {
+                    alignment: space-between;
+
+                    Text {
+                        text: "5h Limit";
+                        color: Theme.text-secondary;
+                        font-size: Theme.font-xs;
+                        font-weight: 500;
+                    }
+
+                    HorizontalLayout {
+                        spacing: 4px;
+                        alignment: end;
+
+                        Text {
+                            text: (root.reset_countdown == "Ready" || root.reset_countdown == "Full Quota") ? "Full Quota" : "Reset: " + root.reset_countdown;
+                            color: (root.reset_countdown == "Ready" || root.reset_countdown == "Full Quota") ? Theme.accent-emerald : Theme.accent-sky;
+                            font-size: Theme.font-xs;
+                            font-weight: (root.reset_countdown == "Ready" || root.reset_countdown == "Full Quota") ? 600 : 400;
+                            overflow: elide;
+                        }
+
+                        Text {
+                            text: root.session_quota_label;
+                            color: Theme.text-primary;
+                            font-size: Theme.font-xs;
+                            font-weight: 700;
+                        }
+                    }
+                }
+
+                ProgressBar {
+                    progress: root.session_quota_pct;
                 }
             }
 
-            btn_touch := TouchArea {
-                mouse-cursor: root.is_live ? MouseCursor.default : MouseCursor.pointer;
-                clicked => {
-                    if !root.is_live {
-                        root.switch_clicked();
+            // Meter 2: Weekly Quota
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 2px;
+
+                HorizontalLayout {
+                    alignment: space-between;
+
+                    Text {
+                        text: "Weekly";
+                        color: Theme.text-secondary;
+                        font-size: Theme.font-xs;
+                        font-weight: 500;
                     }
+
+                    HorizontalLayout {
+                        spacing: 4px;
+                        alignment: end;
+
+                        Text {
+                            text: root.weekly_reset_text;
+                            color: Theme.text-muted;
+                            font-size: Theme.font-xs;
+                            overflow: elide;
+                        }
+
+                        Text {
+                            text: root.weekly_quota_label;
+                            color: Theme.text-primary;
+                            font-size: Theme.font-xs;
+                            font-weight: 700;
+                        }
+                    }
+                }
+
+                ProgressBar {
+                    progress: root.weekly_quota_pct;
                 }
             }
         }

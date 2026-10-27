@@ -1,19 +1,21 @@
 // Antigravity Switchboard - Main Application Window
 // Native Rust + Slint Desktop Switchboard
+// Vertical List Layout (Growing Down)
 
 import { Theme } from "./theme.slint";
 import { ProgressBar } from "./progress_bar.slint";
 import { AccountCard, AccountData } from "./account_card.slint";
 import { HeroBar, ClaudeCard, DeepSeekCard } from "./provider_cards.slint";
+import { ScrollView } from "std-widgets.slint";
 
 export { AccountData }
 
 export component AppWindow inherits Window {
     title: "Antigravity Switchboard";
     icon: @image-url("../app_icon.png");
-    preferred-width: 1040px;
-    preferred-height: 520px;
-    min-width: 880px;
+    preferred-width: 640px;
+    preferred-height: 600px;
+    min-width: 540px;
     min-height: 480px;
     background: Theme.bg-app;
 
@@ -87,9 +89,9 @@ export component AppWindow inherits Window {
     in property <string> client_status: "Client Running";
     in property <bool> client_connected: true;
 
-    // Claude card properties
+    // Claude Code status properties
     in property <string> claude_email: "claude.user@work.io";
-    in property <string> claude_tier: "Claude Pro / Max";
+    in property <string> claude_tier: "Claude Max (20x)";
     in property <float> claude_session_pct: 74.0;
     in property <string> claude_session_label: "74%";
     in property <float> claude_weekly_pct: 52.0;
@@ -98,78 +100,72 @@ export component AppWindow inherits Window {
     in property <string> claude_tokens: "185k tokens ($2.10)";
     in property <bool> claude_connected: true;
 
-    // DeepSeek card properties
+    // DeepSeek status properties
     in property <string> deepseek_balance: "$10.50 USD";
     in property <string> deepseek_status: "Online / Ready";
     in property <string> deepseek_tier: "Pay-as-you-go";
     in property <string> deepseek_usage: "Month: $3.40";
     in property <bool> deepseek_connected: true;
 
-    // Header & system properties
-    in property <string> app_status: "Switchboard Operational";
+    // System status
+    in property <string> app_status: "Ready";
     in property <bool> is_refreshing: false;
 
-    // Callbacks for Rust integration
+    // Callbacks
+    callback switch_account(string);
+    callback select_account(string);
     callback refresh_clicked();
     callback relaunch_client_clicked();
-    callback switch_account(string); // account id
-    callback select_account(string); // account id
     callback claude_action_clicked();
     callback deepseek_action_clicked();
 
     VerticalLayout {
-        padding-left: Theme.spacing-lg;
-        padding-right: Theme.spacing-lg;
-        padding-top: Theme.spacing-md;
-        padding-bottom: Theme.spacing-md;
-        spacing: 10px;
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-sm;
 
-        // 1. Top App Header
+        // 1. Executive Top Header Bar
         HorizontalLayout {
             alignment: space-between;
 
-            // Logo & Title
+            // Brand & Title
             HorizontalLayout {
                 spacing: Theme.spacing-sm;
-                alignment: start;
 
-                // AG Brand Badge
-                Rectangle {
-                    width: 28px;
-                    height: 28px;
-                    border-radius: Theme.radius-sm;
-                    background: #0284c7;
-                    border-width: 1px;
-                    border-color: Theme.accent-sky;
-
-                    Text {
-                        text: "AG";
-                        color: Theme.text-primary;
-                        font-size: Theme.font-xs;
-                        font-weight: 700;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
+                Image {
+                    source: @image-url("../app_icon.png");
+                    width: 20px;
+                    height: 20px;
                 }
 
-                HorizontalLayout {
-                    spacing: 8px;
-                    alignment: center;
+                Text {
+                    text: "Antigravity Switchboard";
+                    color: Theme.text-primary;
+                    font-size: Theme.font-md;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
 
-                    Text {
-                        text: "Antigravity Switchboard";
-                        color: Theme.text-primary;
-                        font-size: Theme.font-md;
-                        font-weight: 700;
-                        vertical-alignment: center;
-                    }
+                // Global hotkey badge
+                Rectangle {
+                    background: Theme.bg-badge;
+                    border-width: 1px;
+                    border-color: Theme.border-default;
+                    border-radius: Theme.radius-xs;
 
-                    Text {
-                        text: "v2.0";
-                        color: Theme.accent-sky;
-                        font-size: Theme.font-xs;
-                        font-weight: 600;
-                        vertical-alignment: center;
+                    HorizontalLayout {
+                        padding-left: 6px;
+                        padding-right: 6px;
+                        padding-top: 1px;
+                        padding-bottom: 1px;
+                        alignment: center;
+
+                        Text {
+                            text: "Ctrl+Alt+S";
+                            color: Theme.accent-sky;
+                            font-size: Theme.font-xs;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
                     }
                 }
             }
@@ -216,6 +212,8 @@ export component AppWindow inherits Window {
 
                 // Refresh Button
                 Rectangle {
+                    width: 76px;
+                    height: 24px;
                     border-radius: Theme.radius-sm;
                     background: refresh_touch.has-hover ? Theme.bg-button-hover : Theme.bg-button;
                     border-width: 1px;
@@ -225,15 +223,10 @@ export component AppWindow inherits Window {
                     animate border-color { duration: 150ms; }
 
                     HorizontalLayout {
-                        padding-left: Theme.spacing-md;
-                        padding-right: Theme.spacing-md;
-                        padding-top: 4px;
-                        padding-bottom: 4px;
-                        spacing: 4px;
                         alignment: center;
 
                         Text {
-                            text: root.is_refreshing ? "Refreshing..." : "Refresh";
+                            text: root.is_refreshing ? "..." : "Refresh";
                             color: refresh_touch.has-hover ? Theme.accent-sky : Theme.text-primary;
                             font-size: Theme.font-xs;
                             font-weight: 600;
@@ -262,107 +255,112 @@ export component AppWindow inherits Window {
             }
         }
 
-        // 3. Antigravity Accounts Section
-        VerticalLayout {
-            spacing: 5px;
-
-            HorizontalLayout {
-                alignment: space-between;
-
-                Text {
-                    text: "ANTIGRAVITY PROFILES";
-                    color: Theme.text-secondary;
-                    font-size: Theme.font-xs;
-                    font-weight: 700;
-                }
-
-                Text {
-                    text: "Select card to view • Instant 1-click credential swap";
-                    color: Theme.text-muted;
-                    font-size: Theme.font-xs;
-                }
-            }
-
-            // Account Cards Row
-            HorizontalLayout {
+        // 3. Scrollable List Area (Growing Down)
+        ScrollView {
+            VerticalLayout {
                 spacing: Theme.spacing-md;
+                padding-right: 4px;
 
-                for account in root.accounts : AccountCard {
-                    horizontal-stretch: 1;
+                // Antigravity Accounts Section
+                VerticalLayout {
+                    spacing: 6px;
 
-                    account_id: account.id;
-                    alias: account.alias;
-                    email: account.email;
-                    tier: account.tier;
-                    is_live: account.is_live;
-                    is_selected: account.is_selected;
-                    session_quota_pct: account.session_quota_pct;
-                    session_quota_label: account.session_quota_label;
-                    weekly_quota_pct: account.weekly_quota_pct;
-                    weekly_quota_label: account.weekly_quota_label;
-                    reset_countdown: account.reset_countdown;
-                    weekly_reset_text: account.weekly_reset_text;
-                    status_text: account.status_text;
+                    HorizontalLayout {
+                        alignment: space-between;
 
-                    switch_clicked => {
-                        root.switch_account(account.id);
+                        Text {
+                            text: "ANTIGRAVITY ACCOUNTS";
+                            color: Theme.text-secondary;
+                            font-size: Theme.font-xs;
+                            font-weight: 700;
+                        }
+
+                        Text {
+                            text: "Instant 1-click credential swap";
+                            color: Theme.text-muted;
+                            font-size: Theme.font-xs;
+                        }
                     }
-                    card_selected => {
-                        root.select_account(account.id);
-                    }
-                }
-            }
-        }
 
-        // 4. Other Providers Section: Claude & DeepSeek
-        VerticalLayout {
-            spacing: 5px;
+                    // Vertical list of accounts growing down
+                    VerticalLayout {
+                        spacing: 6px;
 
-            HorizontalLayout {
-                alignment: space-between;
+                        for account in root.accounts : AccountCard {
+                            account_id: account.id;
+                            alias: account.alias;
+                            email: account.email;
+                            tier: account.tier;
+                            is_live: account.is_live;
+                            is_selected: account.is_selected;
+                            session_quota_pct: account.session_quota_pct;
+                            session_quota_label: account.session_quota_label;
+                            weekly_quota_pct: account.weekly_quota_pct;
+                            weekly_quota_label: account.weekly_quota_label;
+                            reset_countdown: account.reset_countdown;
+                            weekly_reset_text: account.weekly_reset_text;
+                            status_text: account.status_text;
 
-                Text {
-                    text: "EXTERNAL AI TELEMETRY";
-                    color: Theme.text-secondary;
-                    font-size: Theme.font-xs;
-                    font-weight: 700;
-                }
-
-                Text {
-                    text: "Claude Code CLI & DeepSeek Platform Balance";
-                    color: Theme.text-muted;
-                    font-size: Theme.font-xs;
-                }
-            }
-
-            HorizontalLayout {
-                spacing: Theme.spacing-md;
-
-                ClaudeCard {
-                    horizontal-stretch: 1;
-                    email: root.claude_email;
-                    tier: root.claude_tier;
-                    session_pct: root.claude_session_pct;
-                    session_label: root.claude_session_label;
-                    weekly_pct: root.claude_weekly_pct;
-                    weekly_label: root.claude_weekly_label;
-                    reset_countdown: root.claude_reset;
-                    token_usage_text: root.claude_tokens;
-                    is_connected: root.claude_connected;
-                    action_clicked => {
-                        root.claude_action_clicked();
+                            switch_clicked => {
+                                root.switch_account(account.id);
+                            }
+                            card_selected => {
+                                root.select_account(account.id);
+                            }
+                        }
                     }
                 }
 
-                DeepSeekCard {
-                    horizontal-stretch: 1;
-                    balance_text: root.deepseek_balance;
-                    status_text: root.deepseek_status;
-                    tier_text: root.deepseek_tier;
-                    monthly_usage_text: root.deepseek_usage;
-                    is_connected: root.deepseek_connected;
-                    top_up_clicked => {
-                        root.deepseek_action_clicked();
+                // External Providers Section: Claude & DeepSeek
+                VerticalLayout {
+                    spacing: 6px;
+
+                    HorizontalLayout {
+                        alignment: space-between;
+
+                        Text {
+                            text: "EXTERNAL AI TELEMETRY";
+                            color: Theme.text-secondary;
+                            font-size: Theme.font-xs;
+                            font-weight: 700;
+                        }
+
+                        Text {
+                            text: "Claude Code CLI & DeepSeek Platform";
+                            color: Theme.text-muted;
+                            font-size: Theme.font-xs;
+                        }
+                    }
+
+                    // Vertical list of external providers growing down
+                    VerticalLayout {
+                        spacing: 6px;
+
+                        ClaudeCard {
+                            email: root.claude_email;
+                            tier: root.claude_tier;
+                            session_pct: root.claude_session_pct;
+                            session_label: root.claude_session_label;
+                            weekly_pct: root.claude_weekly_pct;
+                            weekly_label: root.claude_weekly_label;
+                            reset_countdown: root.claude_reset;
+                            token_usage_text: root.claude_tokens;
+                            is_connected: root.claude_connected;
+                            action_clicked => {
+                                root.claude_action_clicked();
+                            }
+                        }
+
+                        DeepSeekCard {
+                            balance_text: root.deepseek_balance;
+                            status_text: root.deepseek_status;
+                            tier_text: root.deepseek_tier;
+                            monthly_usage_text: root.deepseek_usage;
+                            is_connected: root.deepseek_connected;
+                            top_up_clicked => {
+                                root.deepseek_action_clicked();
+                            }
+                        }
                     }
                 }
             }

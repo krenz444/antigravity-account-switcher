@@ -1,5 +1,6 @@
 // Antigravity Switchboard - Provider Cards & Hero Bar
 // ClaudeCard, DeepSeekCard, and Antigravity Client HeroBar
+// Formatted as sleek horizontal row cards for vertical list layout
 
 import { Theme } from "./theme.slint";
 import { ProgressBar } from "./progress_bar.slint";
@@ -13,7 +14,7 @@ export component HeroBar inherits Rectangle {
 
     callback relaunch_clicked();
 
-    height: 40px;
+    height: 38px;
     background: Theme.bg-hero;
     border-width: 1px;
     border-color: Theme.border-default;
@@ -38,7 +39,7 @@ export component HeroBar inherits Rectangle {
 
         // Active Client Identity
         HorizontalLayout {
-            spacing: Theme.spacing-sm;
+            spacing: 6px;
             alignment: start;
 
             // Indicator dot
@@ -52,46 +53,43 @@ export component HeroBar inherits Rectangle {
                 }
             }
 
-            HorizontalLayout {
-                spacing: 6px;
-                alignment: center;
+            Text {
+                text: "Active Client:";
+                color: Theme.text-secondary;
+                font-size: Theme.font-xs;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
 
-                Text {
-                    text: "Active Client:";
-                    color: Theme.text-secondary;
-                    font-size: Theme.font-sm;
-                    font-weight: 600;
-                    vertical-alignment: center;
-                }
+            Text {
+                text: root.active_alias;
+                color: Theme.text-primary;
+                font-size: Theme.font-sm;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
 
-                Text {
-                    text: root.active_alias;
-                    color: Theme.text-primary;
-                    font-size: Theme.font-sm;
-                    font-weight: 700;
-                    vertical-alignment: center;
-                }
+            Text {
+                text: "(" + root.active_email + ")";
+                color: Theme.text-muted;
+                font-size: Theme.font-xs;
+                vertical-alignment: center;
+                overflow: elide;
+            }
 
-                Text {
-                    text: "(" + root.active_email + ")";
-                    color: Theme.text-muted;
-                    font-size: Theme.font-xs;
-                    vertical-alignment: center;
-                    overflow: elide;
-                }
-
-                Text {
-                    text: "• " + root.client_status;
-                    color: Theme.accent-emerald;
-                    font-size: Theme.font-xs;
-                    font-weight: 600;
-                    vertical-alignment: center;
-                }
+            Text {
+                text: "• " + root.client_status;
+                color: Theme.accent-emerald;
+                font-size: Theme.font-xs;
+                font-weight: 600;
+                vertical-alignment: center;
             }
         }
 
         // Relaunch Button
         Rectangle {
+            width: 80px;
+            height: 22px;
             border-radius: Theme.radius-sm;
             background: relaunch_touch.has-hover ? #064e3b : Theme.bg-button;
             border-width: 1px;
@@ -101,17 +99,13 @@ export component HeroBar inherits Rectangle {
             animate border-color { duration: 150ms; }
 
             HorizontalLayout {
-                padding-left: Theme.spacing-sm;
-                padding-right: Theme.spacing-sm;
-                padding-top: 4px;
-                padding-bottom: 4px;
                 alignment: center;
 
                 Text {
-                    text: "Relaunch Language Server";
+                    text: "RESTART LS";
                     color: relaunch_touch.has-hover ? Theme.text-primary : Theme.accent-emerald;
                     font-size: Theme.font-xs;
-                    font-weight: 600;
+                    font-weight: 700;
                     vertical-alignment: center;
                 }
             }
@@ -126,7 +120,7 @@ export component HeroBar inherits Rectangle {
     }
 }
 
-// Claude Card: Dedicated card with purple branding, session & weekly quotas, token usage
+// Claude Card: High-density horizontal row card with purple branding, session & weekly quotas, token usage
 export component ClaudeCard inherits Rectangle {
     in property <string> email: "claude.user@work.io";
     in property <string> tier: "Claude Pro / Max";
@@ -143,26 +137,32 @@ export component ClaudeCard inherits Rectangle {
     background: Theme.bg-card;
     border-width: 1px;
     border-color: Theme.border-default;
-    border-radius: Theme.radius-lg;
+    border-radius: Theme.radius-md;
     clip: true;
+
+    // Left purple accent
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: 3px;
+        height: parent.height;
+        background: #a855f7;
+    }
 
     VerticalLayout {
         padding-left: Theme.spacing-md;
         padding-right: Theme.spacing-md;
-        padding-top: Theme.spacing-sm;
-        padding-bottom: Theme.spacing-sm;
-        spacing: 6px;
+        padding-top: 7px;
+        padding-bottom: 7px;
+        spacing: 5px;
 
-        // Header
+        // Top line: Identity & Sync Button
         HorizontalLayout {
-            spacing: Theme.spacing-sm;
             alignment: space-between;
 
             HorizontalLayout {
-                spacing: 6px;
-                alignment: start;
+                spacing: 7px;
 
-                // Purple Provider Badge
                 Rectangle {
                     background: #2e1065;
                     border-width: 1px;
@@ -186,159 +186,159 @@ export component ClaudeCard inherits Rectangle {
                     }
                 }
 
-                VerticalLayout {
-                    spacing: 1px;
+                Text {
+                    text: root.tier;
+                    color: Theme.text-primary;
+                    font-size: Theme.font-sm;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
 
-                    Text {
-                        text: root.tier;
-                        color: Theme.text-primary;
-                        font-size: Theme.font-base;
-                        font-weight: 700;
-                    }
+                Text {
+                    text: root.email;
+                    color: Theme.text-muted;
+                    font-size: Theme.font-xs;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
 
-                    Text {
-                        text: root.email;
-                        color: Theme.text-muted;
-                        font-size: Theme.font-xs;
-                        overflow: elide;
+                Rectangle {
+                    background: Theme.bg-badge;
+                    border-width: 1px;
+                    border-color: Theme.border-default;
+                    border-radius: Theme.radius-xs;
+
+                    HorizontalLayout {
+                        padding-left: 6px;
+                        padding-right: 6px;
+                        padding-top: 1px;
+                        padding-bottom: 1px;
+                        alignment: center;
+
+                        Text {
+                            text: root.token_usage_text;
+                            color: Theme.accent-purple;
+                            font-size: Theme.font-xs;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
                     }
                 }
             }
 
-            // Token Metrics Pill
+            // Sync Button
             Rectangle {
-                background: Theme.bg-badge;
+                width: 80px;
+                height: 22px;
+                border-radius: Theme.radius-sm;
+                background: claude_btn_touch.has-hover ? #3b0764 : Theme.bg-button;
                 border-width: 1px;
-                border-color: Theme.border-default;
-                border-radius: Theme.radius-xs;
+                border-color: claude_btn_touch.has-hover ? Theme.accent-purple : Theme.border-default;
+
+                animate background { duration: 150ms; }
+                animate border-color { duration: 150ms; }
 
                 HorizontalLayout {
-                    padding-left: 6px;
-                    padding-right: 6px;
-                    padding-top: 2px;
-                    padding-bottom: 2px;
                     alignment: center;
 
                     Text {
-                        text: root.token_usage_text;
-                        color: Theme.accent-purple;
+                        text: "SYNC";
+                        color: claude_btn_touch.has-hover ? Theme.text-primary : Theme.accent-purple;
                         font-size: Theme.font-xs;
-                        font-weight: 600;
+                        font-weight: 700;
                         vertical-alignment: center;
+                    }
+                }
+
+                claude_btn_touch := TouchArea {
+                    mouse-cursor: MouseCursor.pointer;
+                    clicked => {
+                        root.action_clicked();
                     }
                 }
             }
         }
 
-        // Divider
-        Rectangle {
-            height: 1px;
-            background: Theme.border-subtle;
-        }
+        // Bottom line: Dual meters side-by-side
+        HorizontalLayout {
+            spacing: Theme.spacing-md;
 
-        // Meter 1: 5-Hour Session Quota
-        VerticalLayout {
-            spacing: 2px;
-
-            HorizontalLayout {
-                alignment: space-between;
-
-                Text {
-                    text: "5h Rolling Limit";
-                    color: Theme.text-secondary;
-                    font-size: Theme.font-xs;
-                    font-weight: 500;
-                }
+            // Meter 1: 5-Hour Session Quota
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 2px;
 
                 HorizontalLayout {
-                    spacing: 6px;
-                    alignment: end;
+                    alignment: space-between;
 
                     Text {
-                        text: root.reset_countdown == "Ready" ? "Ready" : "Reset: " + root.reset_countdown;
-                        color: Theme.text-muted;
+                        text: "5h Limit";
+                        color: Theme.text-secondary;
                         font-size: Theme.font-xs;
+                        font-weight: 500;
+                    }
+
+                    HorizontalLayout {
+                        spacing: 4px;
+                        alignment: end;
+
+                        Text {
+                            text: root.reset_countdown == "Ready" ? "Ready" : "Reset: " + root.reset_countdown;
+                            color: Theme.text-muted;
+                            font-size: Theme.font-xs;
+                            overflow: elide;
+                        }
+
+                        Text {
+                            text: root.session_label;
+                            color: Theme.text-primary;
+                            font-size: Theme.font-xs;
+                            font-weight: 700;
+                        }
+                    }
+                }
+
+                ProgressBar {
+                    progress: root.session_pct;
+                    custom-color-enabled: true;
+                    custom-fill-color: Theme.accent-purple;
+                }
+            }
+
+            // Meter 2: Weekly Quota
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 2px;
+
+                HorizontalLayout {
+                    alignment: space-between;
+
+                    Text {
+                        text: "Weekly Cap";
+                        color: Theme.text-secondary;
+                        font-size: Theme.font-xs;
+                        font-weight: 500;
                     }
 
                     Text {
-                        text: root.session_label;
+                        text: root.weekly_label;
                         color: Theme.text-primary;
                         font-size: Theme.font-xs;
                         font-weight: 700;
                     }
                 }
-            }
 
-            ProgressBar {
-                progress: root.session_pct;
-                custom-color-enabled: true;
-                custom-fill-color: Theme.accent-purple;
-            }
-        }
-
-        // Meter 2: Weekly Quota
-        VerticalLayout {
-            spacing: 2px;
-
-            HorizontalLayout {
-                alignment: space-between;
-
-                Text {
-                    text: "Weekly Cap";
-                    color: Theme.text-secondary;
-                    font-size: Theme.font-xs;
-                    font-weight: 500;
-                }
-
-                Text {
-                    text: root.weekly_label;
-                    color: Theme.text-primary;
-                    font-size: Theme.font-xs;
-                    font-weight: 700;
-                }
-            }
-
-            ProgressBar {
-                progress: root.weekly_pct;
-                custom-color-enabled: true;
-                custom-fill-color: Theme.accent-purple;
-            }
-        }
-
-        // Action button
-        Rectangle {
-            border-radius: Theme.radius-sm;
-            background: claude_btn_touch.has-hover ? #3b0764 : Theme.bg-button;
-            border-width: 1px;
-            border-color: claude_btn_touch.has-hover ? Theme.accent-purple : Theme.border-default;
-
-            HorizontalLayout {
-                padding-left: Theme.spacing-sm;
-                padding-right: Theme.spacing-sm;
-                padding-top: 5px;
-                padding-bottom: 5px;
-                alignment: center;
-
-                Text {
-                    text: "Sync Provider Telemetry";
-                    color: claude_btn_touch.has-hover ? Theme.text-primary : Theme.accent-purple;
-                    font-size: Theme.font-sm;
-                    font-weight: 600;
-                    vertical-alignment: center;
-                }
-            }
-
-            claude_btn_touch := TouchArea {
-                mouse-cursor: MouseCursor.pointer;
-                clicked => {
-                    root.action_clicked();
+                ProgressBar {
+                    progress: root.weekly_pct;
+                    custom-color-enabled: true;
+                    custom-fill-color: Theme.accent-purple;
                 }
             }
         }
     }
 }
 
-// DeepSeek Card: Dedicated card with blue branding, balance display, status indicator
+// DeepSeek Card: Single compact horizontal bar with blue branding and balance display
 export component DeepSeekCard inherits Rectangle {
     in property <string> balance_text: "$10.50 USD";
     in property <string> status_text: "Online / Ready";
@@ -351,169 +351,128 @@ export component DeepSeekCard inherits Rectangle {
     background: Theme.bg-card;
     border-width: 1px;
     border-color: Theme.border-default;
-    border-radius: Theme.radius-lg;
+    border-radius: Theme.radius-md;
     clip: true;
 
-    VerticalLayout {
+    // Left blue accent
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: 3px;
+        height: parent.height;
+        background: #3b82f6;
+    }
+
+    HorizontalLayout {
         padding-left: Theme.spacing-md;
         padding-right: Theme.spacing-md;
-        padding-top: Theme.spacing-sm;
-        padding-bottom: Theme.spacing-sm;
-        spacing: 6px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        alignment: space-between;
 
-        // Header
+        // Identity
         HorizontalLayout {
-            spacing: Theme.spacing-sm;
-            alignment: space-between;
+            spacing: 8px;
+
+            Rectangle {
+                background: #172554;
+                border-width: 1px;
+                border-color: #3b82f6;
+                border-radius: Theme.radius-xs;
+
+                HorizontalLayout {
+                    padding-left: 5px;
+                    padding-right: 5px;
+                    padding-top: 1px;
+                    padding-bottom: 1px;
+                    alignment: center;
+
+                    Text {
+                        text: "DEEPSEEK";
+                        color: Theme.accent-blue;
+                        font-size: Theme.font-xs;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            Text {
+                text: root.tier_text;
+                color: Theme.text-primary;
+                font-size: Theme.font-sm;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+
+            Text {
+                text: "• " + root.status_text;
+                color: Theme.accent-emerald;
+                font-size: Theme.font-xs;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+        }
+
+        // Metrics & Manage Action
+        HorizontalLayout {
+            spacing: Theme.spacing-md;
 
             HorizontalLayout {
                 spacing: 6px;
-                alignment: start;
-
-                // Blue Provider Badge
-                Rectangle {
-                    background: #172554;
-                    border-width: 1px;
-                    border-color: #3b82f6;
-                    border-radius: Theme.radius-xs;
-
-                    HorizontalLayout {
-                        padding-left: 5px;
-                        padding-right: 5px;
-                        padding-top: 1px;
-                        padding-bottom: 1px;
-                        alignment: center;
-
-                        Text {
-                            text: "DEEPSEEK";
-                            color: Theme.accent-blue;
-                            font-size: Theme.font-xs;
-                            font-weight: 700;
-                            vertical-alignment: center;
-                        }
-                    }
-                }
-
-                VerticalLayout {
-                    spacing: 1px;
-
-                    Text {
-                        text: root.tier_text;
-                        color: Theme.text-primary;
-                        font-size: Theme.font-base;
-                        font-weight: 700;
-                    }
-
-                    Text {
-                        text: "API Platform Telemetry";
-                        color: Theme.text-muted;
-                        font-size: Theme.font-xs;
-                    }
-                }
-            }
-
-            // Online Status Pill
-            HorizontalLayout {
-                spacing: 4px;
-                alignment: end;
-
-                VerticalLayout {
-                    alignment: center;
-                    Rectangle {
-                        width: 5px;
-                        height: 5px;
-                        border-radius: 2.5px;
-                        background: Theme.accent-emerald;
-                    }
-                }
 
                 Text {
-                    text: root.status_text;
-                    color: Theme.accent-emerald;
-                    font-size: Theme.font-xs;
-                    font-weight: 600;
-                    vertical-alignment: center;
-                }
-            }
-        }
-
-        // Divider
-        Rectangle {
-            height: 1px;
-            background: Theme.border-subtle;
-        }
-
-        // Middle: Balance & Spend Metrics
-        HorizontalLayout {
-            alignment: space-between;
-            padding-top: 4px;
-            padding-bottom: 4px;
-
-            VerticalLayout {
-                spacing: 1px;
-
-                Text {
-                    text: "Available Account Balance";
+                    text: "Balance:";
                     color: Theme.text-secondary;
                     font-size: Theme.font-xs;
+                    vertical-alignment: center;
                 }
 
                 Text {
                     text: root.balance_text;
-                    color: Theme.text-primary;
-                    font-size: Theme.font-xl;
-                    font-weight: 700;
-                }
-            }
-
-            VerticalLayout {
-                spacing: 1px;
-                alignment: end;
-
-                Text {
-                    text: "Monthly Spend";
-                    color: Theme.text-secondary;
-                    font-size: Theme.font-xs;
-                    horizontal-alignment: right;
-                }
-
-                Text {
-                    text: root.monthly_usage_text;
-                    color: Theme.accent-blue;
-                    font-size: Theme.font-md;
-                    font-weight: 700;
-                    horizontal-alignment: right;
-                }
-            }
-        }
-
-        // Action button
-        Rectangle {
-            border-radius: Theme.radius-sm;
-            background: ds_btn_touch.has-hover ? #1e3a8a : Theme.bg-button;
-            border-width: 1px;
-            border-color: ds_btn_touch.has-hover ? Theme.accent-blue : Theme.border-default;
-
-            HorizontalLayout {
-                padding-left: Theme.spacing-sm;
-                padding-right: Theme.spacing-sm;
-                padding-top: 5px;
-                padding-bottom: 5px;
-                alignment: center;
-
-                Text {
-                    text: "Manage API Platform Credit";
-                    color: ds_btn_touch.has-hover ? Theme.text-primary : Theme.accent-blue;
+                    color: Theme.accent-emerald;
                     font-size: Theme.font-sm;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    text: "(" + root.monthly_usage_text + ")";
+                    color: Theme.accent-blue;
+                    font-size: Theme.font-xs;
                     font-weight: 600;
                     vertical-alignment: center;
                 }
             }
 
-            ds_btn_touch := TouchArea {
-                mouse-cursor: MouseCursor.pointer;
-                clicked => {
-                    root.top_up_clicked();
+            Rectangle {
+                width: 80px;
+                height: 22px;
+                border-radius: Theme.radius-sm;
+                background: ds_btn_touch.has-hover ? #1e3a8a : Theme.bg-button;
+                border-width: 1px;
+                border-color: ds_btn_touch.has-hover ? Theme.accent-blue : Theme.border-default;
+
+                animate background { duration: 150ms; }
+                animate border-color { duration: 150ms; }
+
+                HorizontalLayout {
+                    alignment: center;
+
+                    Text {
+                        text: "MANAGE";
+                        color: ds_btn_touch.has-hover ? Theme.text-primary : Theme.accent-blue;
+                        font-size: Theme.font-xs;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                }
+
+                ds_btn_touch := TouchArea {
+                    mouse-cursor: MouseCursor.pointer;
+                    clicked => {
+                        root.top_up_clicked();
+                    }
                 }
             }
         }
