@@ -492,19 +492,40 @@ pub fn list_profiles() -> Vec<AccountItem> {
             alias = format!("Profile {}", idx + 1);
         }
 
-        let is_live = !email.is_empty() && email.to_lowercase() == live_email;
         let hotkey_index = (idx + 1) as i32;
 
         items.push(AccountItem {
             name,
             email,
             alias,
-            is_live,
+            is_live: false,
             is_staged: false,
             is_cooldown: false,
             hotkey_index,
             is_smart_next: false,
         });
+    }
+
+    // Strictly enforce single-active profile invariant: at most one profile can be is_live
+    let active_profile_name = get_active_profile_name();
+    let mut active_idx = if !live_email.is_empty() && live_email != "unknown" {
+        items.iter().position(|it| it.email.to_lowercase() == live_email)
+    } else {
+        None
+    };
+
+    if active_idx.is_none() {
+        active_idx = items.iter().position(|it| it.name.eq_ignore_ascii_case(&active_profile_name));
+    }
+
+    if active_idx.is_none() && !items.is_empty() {
+        active_idx = Some(0);
+    }
+
+    if let Some(act) = active_idx {
+        for (i, it) in items.iter_mut().enumerate() {
+            it.is_live = i == act;
+        }
     }
 
     items

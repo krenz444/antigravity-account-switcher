@@ -32,23 +32,40 @@ fn refresh_ui_state(app: &AppWindow, preferred_selected_id: Option<&str>) {
     let ls_running = process::is_language_server_running();
     let client_running = process::is_client_running();
 
+    // Strictly enforce single active profile invariant across the entire roster
+    let mut active_idx = if let Some(ref live) = live_email {
+        let clean_live = live.trim().to_lowercase();
+        if !clean_live.is_empty() && clean_live != "unknown" {
+            profiles
+                .iter()
+                .position(|p| p.email.trim().eq_ignore_ascii_case(&clean_live))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    if active_idx.is_none() {
+        active_idx = profiles
+            .iter()
+            .position(|p| p.name.eq_ignore_ascii_case(&active_profile_name));
+    }
+
+    if active_idx.is_none() && !profiles.is_empty() {
+        active_idx = Some(0);
+    }
+
     let mut active_alias = String::from("No Active Account");
     let mut active_email = live_email.clone().unwrap_or_else(|| String::from("No Active Email"));
 
     let mut slint_accounts = Vec::new();
 
     for (idx, mut p) in profiles.into_iter().enumerate() {
-        if let Some(ref live) = live_email {
-            if !live.is_empty() && p.email.eq_ignore_ascii_case(live) {
-                p.is_live = true;
-            }
-        }
-        // Fallback: If no live email matched, use active profile tracked in state
-        if !p.is_live && (live_email.is_none() || active_alias == "No Active Account") && p.name == active_profile_name {
-            p.is_live = true;
-        }
+        let is_live = Some(idx) == active_idx;
+        p.is_live = is_live;
 
-        if p.is_live {
+        if is_live {
             active_alias = if p.email.is_empty() {
                 p.name.clone()
             } else {
@@ -59,10 +76,10 @@ fn refresh_ui_state(app: &AppWindow, preferred_selected_id: Option<&str>) {
 
         let is_selected = match preferred_selected_id {
             Some(id) => p.name == id,
-            None => p.is_live || (idx == 0 && live_email.is_none()),
+            None => is_live || (idx == 0 && active_idx.is_none()),
         };
 
-        let status_text = if p.is_live { "Active" } else { "Standby" };
+        let status_text = if is_live { "Active" } else { "Standby" };
 
         let data = AccountData {
             id: p.name.clone().into(),
@@ -74,7 +91,7 @@ fn refresh_ui_state(app: &AppWindow, preferred_selected_id: Option<&str>) {
             .into(),
             email: p.email.clone().into(),
             tier: "Pro".into(),
-            is_live: p.is_live,
+            is_live,
             is_selected,
             session_quota_pct: 100.0,
             session_quota_label: "100%".into(),
@@ -186,21 +203,39 @@ fn trigger_full_refresh(app_weak: slint::Weak<AppWindow>, preferred_selected_id:
             let app_weak_clone = app_weak.clone();
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(app) = app_weak_clone.upgrade() {
+                    // Strictly enforce single active profile invariant across the entire roster
+                    let mut active_idx = if let Some(ref live) = live_email {
+                        let clean_live = live.trim().to_lowercase();
+                        if !clean_live.is_empty() && clean_live != "unknown" {
+                            profile_quotas
+                                .iter()
+                                .position(|(p, _)| p.email.trim().eq_ignore_ascii_case(&clean_live))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
+                    if active_idx.is_none() {
+                        active_idx = profile_quotas
+                            .iter()
+                            .position(|(p, _)| p.name.eq_ignore_ascii_case(&active_profile_name));
+                    }
+
+                    if active_idx.is_none() && !profile_quotas.is_empty() {
+                        active_idx = Some(0);
+                    }
+
                     let mut active_alias = String::from("No Active Account");
                     let mut active_email = live_email.clone().unwrap_or_else(|| String::from("No Active Email"));
 
                     let mut slint_accounts = Vec::new();
                     for (idx, (mut p, quota)) in profile_quotas.into_iter().enumerate() {
-                        if let Some(ref live) = live_email {
-                            if !live.is_empty() && p.email.eq_ignore_ascii_case(live) {
-                                p.is_live = true;
-                            }
-                        }
-                        if !p.is_live && (live_email.is_none() || active_alias == "No Active Account") && p.name == active_profile_name {
-                            p.is_live = true;
-                        }
+                        let is_live = Some(idx) == active_idx;
+                        p.is_live = is_live;
 
-                        if p.is_live {
+                        if is_live {
                             active_alias = if p.email.is_empty() {
                                 p.name.clone()
                             } else {
@@ -211,16 +246,23 @@ fn trigger_full_refresh(app_weak: slint::Weak<AppWindow>, preferred_selected_id:
 
                         let is_selected = match preferred_selected_id.as_deref() {
                             Some(id) => p.name == id,
-                            None => p.is_live || (idx == 0 && live_email.is_none()),
+                            None => is_live || (idx == 0 && active_idx.is_none()),
                         };
 
-                        let status_text = if p.is_live { "Active" } else { "Standby" };
+                        let status_text = if is_live { "Active" } else { "Standby" };
 
                         let weekly_reset_str = google_api::format_weekly_reset(&quota.weekly_reset);
                         let reset_countdown_str = if quota.pct_5h >= 100.0 {
                             "Full Quota".to_string()
                         } else {
-                            quota.countdown_text.clone()
+                            let cd = quota.countdown_text.trim();
+                            if let Some(stripped) = cd.strip_prefix("Reset: ") {
+                                stripped.to_string()
+                            } else if let Some(stripped) = cd.strip_prefix("Reset:") {
+                                stripped.trim().to_string()
+                            } else {
+                                cd.to_string()
+                            }
                         };
 
                         let data = AccountData {
@@ -233,7 +275,7 @@ fn trigger_full_refresh(app_weak: slint::Weak<AppWindow>, preferred_selected_id:
                             .into(),
                             email: p.email.clone().into(),
                             tier: quota.tier_label.clone().into(),
-                            is_live: p.is_live,
+                            is_live,
                             is_selected,
                             session_quota_pct: quota.pct_5h,
                             session_quota_label: format!("{:.0}%", quota.pct_5h).into(),

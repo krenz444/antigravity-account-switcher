@@ -35,6 +35,57 @@ fn test_paths_and_discovery() {
     assert!(profiles.iter().any(|p| p.name == "google_3"));
     assert!(profiles.iter().any(|p| p.name == "google_4"));
     assert!(profiles.iter().any(|p| p.name == "google_5"));
+
+    // Invariant: At most one profile can ever be live at any time
+    let live_count = profiles.iter().filter(|p| p.is_live).count();
+    assert!(
+        live_count <= 1,
+        "Invariant violated: expected at most 1 live profile, found {}",
+        live_count
+    );
+}
+
+#[test]
+fn test_single_active_profile_invariant() {
+    let _lock = TEST_MUTEX.lock().unwrap();
+    let temp_dir = std::env::temp_dir().join(format!("test_single_active_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()));
+    let temp_profiles = temp_dir.join("profiles");
+    let test_p1 = temp_profiles.join("google_1");
+    let test_p2 = temp_profiles.join("google_2");
+    let test_p3 = temp_profiles.join("google_3");
+
+    std::fs::create_dir_all(&test_p1).unwrap();
+    std::fs::create_dir_all(&test_p2).unwrap();
+    std::fs::create_dir_all(&test_p3).unwrap();
+
+    std::fs::write(test_p1.join("profile_meta.json"), r#"{"name": "google_1", "email": "p1@example.com"}"#).unwrap();
+    std::fs::write(test_p2.join("profile_meta.json"), r#"{"name": "google_2", "email": "p2@example.com"}"#).unwrap();
+    std::fs::write(test_p3.join("profile_meta.json"), r#"{"name": "google_3", "email": "p3@example.com"}"#).unwrap();
+
+    let mock_storage = temp_dir.join("mock_app_storage.json");
+    let mock_state = temp_dir.join("mock_usage_state.json");
+
+    // Scenario: State file points to google_2, but live IDE session is p3@example.com (google_3)
+    std::fs::write(&mock_storage, r#"{"jetski.onboarding.lastLoginUsername": "p3@example.com"}"#).unwrap();
+    std::fs::write(&mock_state, r#"{"active_google_profile": "google_2"}"#).unwrap();
+
+    std::env::set_var("GEMINI_DIR", &temp_dir);
+    std::env::set_var("ANTIGRAVITY_APP_STORAGE", &mock_storage);
+    std::env::set_var("ANTIGRAVITY_STATE_FILE", &mock_state);
+    std::env::set_var("ANTIGRAVITY_MOCK_CREDENTIALS", "1");
+
+    let discovered = router::list_profiles();
+    let live_profiles: Vec<_> = discovered.iter().filter(|p| p.is_live).collect();
+
+    // Verify EXACTLY one profile is marked live (p3 matching live login wins over stale state)
+    assert_eq!(live_profiles.len(), 1, "Must have exactly 1 live profile");
+    assert_eq!(live_profiles[0].name, "google_3", "Live session email p3 should be the single live profile");
+
+    std::env::remove_var("GEMINI_DIR");
+    std::env::remove_var("ANTIGRAVITY_APP_STORAGE");
+    std::env::remove_var("ANTIGRAVITY_STATE_FILE");
+    std::env::remove_var("ANTIGRAVITY_MOCK_CREDENTIALS");
+    let _ = std::fs::remove_dir_all(temp_dir);
 }
 
 #[test]
