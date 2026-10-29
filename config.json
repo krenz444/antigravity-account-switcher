@@ -3,7 +3,9 @@
   "google_profiles": [
     "google_1",
     "google_2",
-    "google_3"
+    "google_3",
+    "google_4",
+    "google_5"
   ],
   "claude_profile": {
     "enabled": true,

@@ -213,8 +213,11 @@ def read_windows_credential(target="gemini:antigravity"):
     email = None
     try:
         data = json.loads(raw_blob.decode('utf-8'))
-        id_tok = data.get('id_token') or data.get('token', {}).get('id_token', '')
-        email = extract_email_from_jwt(id_tok)
+        if data.get('id_token_email'):
+            email = data.get('id_token_email')
+        else:
+            id_tok = data.get('id_token') or data.get('token', {}).get('id_token', '')
+            email = extract_email_from_jwt(id_tok)
     except Exception:
         pass
     return raw_blob, email
@@ -606,18 +609,37 @@ def save_current_profile(name):
         except Exception:
             pass
 
-    # 2. Save active files if available
-    if os.path.exists(ACTIVE_OAUTH):
+    # 2. Save active files / synthesize oauth_creds.json
+    if raw_blob:
+        try:
+            data = json.loads(raw_blob.decode('utf-8'))
+            tok = data.get("token", {})
+            if tok.get("access_token") and tok.get("refresh_token"):
+                oauth_data = {
+                    "access_token": tok.get("access_token"),
+                    "refresh_token": tok.get("refresh_token"),
+                    "scope": "openid https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email",
+                    "token_type": tok.get("token_type", "Bearer"),
+                    "id_token": data.get("id_token", ""),
+                    "expiry_date": tok.get("expiry", "")
+                }
+                save_json(os.path.join(target_dir, "oauth_creds.json"), oauth_data)
+                save_json(ACTIVE_OAUTH, oauth_data)
+                saved_anything = True
+        except Exception:
+            pass
+
+    if not os.path.exists(os.path.join(target_dir, "oauth_creds.json")) and os.path.exists(ACTIVE_OAUTH):
         try:
             shutil.copy2(ACTIVE_OAUTH, os.path.join(target_dir, "oauth_creds.json"))
             saved_anything = True
         except Exception:
             pass
-    if os.path.exists(ACTIVE_ACCOUNTS):
-        acc_data = load_json(ACTIVE_ACCOUNTS, {"active": email, "old": []})
-        acc_data["active"] = email
-        save_json(os.path.join(target_dir, "google_accounts.json"), acc_data)
-        saved_anything = True
+
+    acc_data = {"active": email, "old": []}
+    save_json(os.path.join(target_dir, "google_accounts.json"), acc_data)
+    save_json(ACTIVE_ACCOUNTS, acc_data)
+    saved_anything = True
 
     # 3. Save profile metadata
     save_json(os.path.join(target_dir, "profile_meta.json"), {

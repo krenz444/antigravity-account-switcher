@@ -238,6 +238,14 @@ pub fn extract_email_from_jwt(id_tok: &str) -> Option<String> {
 pub fn extract_email_from_blob(blob: &[u8]) -> Option<String> {
     let text = std::str::from_utf8(blob).ok()?;
     let value: Value = serde_json::from_str(text).ok()?;
+
+    if let Some(email) = value.get("id_token_email").and_then(|v| v.as_str()) {
+        let trimmed = email.trim().to_lowercase();
+        if !trimmed.is_empty() {
+            return Some(trimmed);
+        }
+    }
+
     let id_tok = value.get("id_token")
         .and_then(|v| v.as_str())
         .or_else(|| value.get("token").and_then(|t| t.get("id_token")).and_then(|v| v.as_str()));
@@ -249,8 +257,33 @@ pub fn extract_email_from_blob(blob: &[u8]) -> Option<String> {
     }
 }
 
-/// Read active Google account email address from `google_accounts.json` or fallback paths.
+/// Read active Google account email address from live credentials, app storage, or fallback paths.
 pub fn get_live_antigravity_email() -> Option<String> {
+    // 1. First priority: Live credential in Windows Credential Manager
+    let (_, cred_email) = read_windows_credential();
+    if let Some(email) = cred_email {
+        let trimmed = email.trim();
+        if !trimmed.is_empty() && trimmed != "Unknown" {
+            return Some(trimmed.to_string());
+        }
+    }
+
+    // 2. Second priority: AppData app_storage.json (live Antigravity IDE state)
+    let app_storage = app_storage_path();
+    if app_storage.exists() {
+        if let Ok(content) = fs::read_to_string(&app_storage) {
+            if let Ok(val) = serde_json::from_str::<Value>(&content) {
+                if let Some(user) = val.get("jetski.onboarding.lastLoginUsername").and_then(|v| v.as_str()) {
+                    let trimmed = user.trim();
+                    if !trimmed.is_empty() && trimmed != "Unknown" {
+                        return Some(trimmed.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Fallback: ~/.gemini/google_accounts.json
     let p = active_accounts_path();
     if p.exists() {
         if let Ok(content) = fs::read_to_string(&p) {
@@ -262,30 +295,6 @@ pub fn get_live_antigravity_email() -> Option<String> {
                     }
                 }
             }
-        }
-    }
-
-    // Fallback: AppData app_storage.json
-    let app_storage = app_storage_path();
-    if app_storage.exists() {
-        if let Ok(content) = fs::read_to_string(&app_storage) {
-            if let Ok(val) = serde_json::from_str::<Value>(&content) {
-                if let Some(user) = val.get("jetski.onboarding.lastLoginUsername").and_then(|v| v.as_str()) {
-                    let trimmed = user.trim();
-                    if !trimmed.is_empty() {
-                        return Some(trimmed.to_string());
-                    }
-                }
-            }
-        }
-    }
-
-    // Fallback: Read active credential email from Windows Credential Manager
-    let (_, cred_email) = read_windows_credential();
-    if let Some(email) = cred_email {
-        let trimmed = email.trim();
-        if !trimmed.is_empty() {
-            return Some(trimmed.to_string());
         }
     }
 
@@ -758,19 +767,44 @@ pub fn save_current_profile(name: &str, alias: Option<&str>) -> Result<bool, Box
 
     // 1. Backup Windows Credential blob
     let (blob_opt, _) = read_windows_credential();
-    if let Some(blob) = blob_opt {
-        atomic_write_file(&target_dir.join("credential_blob.bin"), &blob)?;
+    if let Some(ref blob) = blob_opt {
+        atomic_write_file(&target_dir.join("credential_blob.bin"), blob)?;
+
+        // Synthesize oauth_creds.json from blob token if available
+        if let Ok(text) = std::str::from_utf8(blob) {
+            if let Ok(val) = serde_json::from_str::<Value>(text) {
+                if let Some(tok) = val.get("token") {
+                    if let (Some(acc), Some(ref_tok)) = (
+                        tok.get("access_token").and_then(|v| v.as_str()),
+                        tok.get("refresh_token").and_then(|v| v.as_str()),
+                    ) {
+                        let oauth_data = serde_json::json!({
+                            "access_token": acc,
+                            "refresh_token": ref_tok,
+                            "scope": "openid https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email",
+                            "token_type": tok.get("token_type").and_then(|v| v.as_str()).unwrap_or("Bearer"),
+                            "id_token": val.get("id_token").and_then(|v| v.as_str()).unwrap_or(""),
+                            "expiry_date": tok.get("expiry").and_then(|v| v.as_str()).unwrap_or("")
+                        });
+                        let _ = atomic_write_file(
+                            &target_dir.join("oauth_creds.json"),
+                            &serde_json::to_vec_pretty(&oauth_data).unwrap_or_default(),
+                        );
+                    }
+                }
+            }
+        }
     }
 
-    // 2. Backup file credentials
-    let oauth_active = active_oauth_path();
-    if oauth_active.exists() {
-        atomic_copy_file(&oauth_active, &target_dir.join("oauth_creds.json"))?;
-    }
-    let acc_active = active_accounts_path();
-    if acc_active.exists() {
-        atomic_copy_file(&acc_active, &target_dir.join("google_accounts.json"))?;
-    }
+    // 2. Ensure google_accounts.json exists and accurately reflects live_email
+    let acc_data = serde_json::json!({
+        "active": live_email.clone(),
+        "old": []
+    });
+    let _ = atomic_write_file(
+        &target_dir.join("google_accounts.json"),
+        &serde_json::to_vec_pretty(&acc_data).unwrap_or_default(),
+    );
 
     // 3. Write profile metadata
     let meta = ProfileMeta {

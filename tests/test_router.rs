@@ -33,6 +33,8 @@ fn test_paths_and_discovery() {
     assert!(profiles.iter().any(|p| p.name == "google_1"));
     assert!(profiles.iter().any(|p| p.name == "google_2"));
     assert!(profiles.iter().any(|p| p.name == "google_3"));
+    assert!(profiles.iter().any(|p| p.name == "google_4"));
+    assert!(profiles.iter().any(|p| p.name == "google_5"));
 }
 
 #[test]
@@ -66,6 +68,11 @@ fn test_jwt_email_extraction() {
     let test_jwt = "eyJhbGciOiJSUzI1NiJ9.eyJlbWFpbCI6ICJ0ZXN0LnVzZXJAZG9tYWluLmNvbSJ9.signature";
     let email = router::extract_email_from_jwt(test_jwt);
     assert_eq!(email, Some("test.user@domain.com".to_string()));
+
+    // Test blob extraction with id_token_email
+    let blob_json = r#"{"id_token_email":"ericfurphy2@gmail.com","auth_method":"consumer"}"#;
+    let blob_email = router::extract_email_from_blob(blob_json.as_bytes());
+    assert_eq!(blob_email, Some("ericfurphy2@gmail.com".to_string()));
 }
 
 #[test]
